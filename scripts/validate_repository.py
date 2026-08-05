@@ -60,6 +60,15 @@ def main() -> int:
         errors.append("SKILL.md exceeds 500 lines")
     if "TODO" in skill_text:
         errors.append("SKILL.md contains TODO placeholders")
+    for required_text in (
+        "最新命名 XLSX 是可选输入",
+        "从该算法文件夹内已有测试说明或模型原理说明",
+        "不使用 `algo1-4-j-N` 文件夹编号冒充模型名称",
+        "测试说明参考模板或示例",
+        "模型原理说明参考模板或示例",
+    ):
+        if required_text not in skill_text:
+            errors.append(f"SKILL.md is missing required workflow text: {required_text}")
 
     agent_text = (SKILL / "agents/openai.yaml").read_text(encoding="utf-8")
     if "$ats-kt1-algorithm-docs" not in agent_text:

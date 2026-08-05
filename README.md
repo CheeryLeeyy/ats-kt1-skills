@@ -4,7 +4,18 @@
 
 ## 包含的 Skill
 
-- `ats-kt1-algorithm-docs`：盘点课题一 Docker 算法包，核对最新模型命名，记录真实输入输出，生成并校验“测试说明”和“模型原理说明” Word 文档。
+- `ats-kt1-algorithm-docs`：盘点课题一 Docker 算法包，记录真实输入输出，并按参考模板生成和校验“测试说明”与“模型原理说明” Word 文档；提供最新命名 Excel 时核对“模型名称（现）”，未提供时从算法文件夹内已有文档读取模型名称。
+
+## 使用输入
+
+使用本 Skill 时必须有以下两类参考文档，可以使用项目提供的最新版，也可以使用仓库内置示例：
+
+- 测试说明参考模板或示例：`skills/ats-kt1-algorithm-docs/assets/测试说明-示例.docx`
+- 模型原理说明参考模板或示例：`skills/ats-kt1-algorithm-docs/assets/模型原理说明-示例.docx`
+
+最新命名 Excel 是可选项。如果提供，Skill 会检索“模型名称（现）”并按算法编号核对；如果没有，则从每个 `algo1-4-j-N` 算法文件夹内已有的测试说明或模型原理说明读取“模型名称”。项目现场提供的模板优先于仓库内置示例。若 Excel 和内部文档都不能提供模型名称，Skill 会停止并提示补充，不用文件夹编号冒充模型名称。
+
+仓库同时内置 `skills/ats-kt1-algorithm-docs/references/算法提交说明.md`。Docker 运行失败、镜像需要修复或算法提交目录需要整理时，按该规范检查镜像命名、目录布局、输入输出挂载、`params.json` 和 `test_options/`。
 
 ## 仓库结构
 

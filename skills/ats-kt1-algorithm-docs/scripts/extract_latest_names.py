@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-"""Extract algorithm identifiers and current model names from the naming XLSX."""
+"""Resolve model names from an optional naming XLSX or existing DOCX files."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import re
+import sys
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 
 NS = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+PACKAGE_PATTERN = re.compile(r"algo1-4-j-(\d+)", re.IGNORECASE)
+MODEL_NAME_PATTERN = re.compile(
+    r"^\s*模型名称(?:（现）)?(?:\d+)?\s*(?:[:：]\s*)?(.*?)\s*$"
+)
 
 
 def cell_column(reference: str) -> str:
@@ -49,19 +55,87 @@ def load_rows(path: Path) -> list[dict[str, str]]:
     return rows
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--xlsx", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--first", type=int)
-    parser.add_argument("--last", type=int)
-    args = parser.parse_args()
-    if (args.first is None) != (args.last is None):
-        parser.error("--first and --last must be supplied together")
-    if args.first is not None and args.first > args.last:
-        parser.error("--first must not be greater than --last")
+def discover_packages(root: Path, first: int | None, last: int | None) -> list[tuple[int, str]]:
+    if not root.is_dir():
+        raise ValueError(f"algorithm root is not a directory: {root}")
+    packages: list[tuple[int, str]] = []
+    for path in root.iterdir():
+        if not path.is_dir():
+            continue
+        match = PACKAGE_PATTERN.fullmatch(path.name)
+        if not match:
+            continue
+        number = int(match.group(1))
+        if first is not None and not first <= number <= last:
+            continue
+        packages.append((number, path.name))
+    packages.sort()
+    if not packages:
+        raise ValueError("no topic-one algorithm folders were found")
+    return packages
 
-    rows = load_rows(args.xlsx)
+
+def docx_paragraphs(path: Path) -> list[str]:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            document = ET.fromstring(archive.read("word/document.xml"))
+    except (KeyError, ET.ParseError, zipfile.BadZipFile) as exc:
+        raise ValueError(f"cannot read DOCX {path}: {exc}") from exc
+    paragraphs: list[str] = []
+    for paragraph in document.iter(W + "p"):
+        value = "".join(node.text or "" for node in paragraph.iter(W + "t")).strip()
+        if value:
+            paragraphs.append(value)
+    return paragraphs
+
+
+def extract_model_name(path: Path) -> str | None:
+    paragraphs = docx_paragraphs(path)
+    for index, paragraph in enumerate(paragraphs):
+        match = MODEL_NAME_PATTERN.fullmatch(paragraph)
+        if not match:
+            continue
+        inline_value = match.group(1).strip()
+        if inline_value:
+            return inline_value
+        if index + 1 < len(paragraphs):
+            next_value = paragraphs[index + 1].strip()
+            if next_value and not MODEL_NAME_PATTERN.fullmatch(next_value):
+                return next_value
+    return None
+
+
+def document_priority(path: Path) -> tuple[int, int, str]:
+    name = path.name.lower()
+    if "模型原理说明" in name:
+        document_type = 0
+    elif "测试说明" in name:
+        document_type = 1
+    else:
+        document_type = 2
+    old_marker = 1 if "old" in name else 0
+    return document_type, old_marker, name
+
+
+def name_from_existing_documents(package_dir: Path) -> tuple[str, Path]:
+    candidates = sorted(package_dir.rglob("*.docx"), key=document_priority)
+    unreadable: list[str] = []
+    for path in candidates:
+        try:
+            model_name = extract_model_name(path)
+        except ValueError as exc:
+            unreadable.append(str(exc))
+            continue
+        if model_name:
+            return model_name, path
+    detail = f"; unreadable documents: {unreadable}" if unreadable else ""
+    raise ValueError(
+        f"could not find a 模型名称 field in existing DOCX files under {package_dir}{detail}"
+    )
+
+
+def load_workbook_names(path: Path) -> tuple[dict[str, dict[str, str]], str, str]:
+    rows = load_rows(path)
     header_index = next(
         index
         for index, row in enumerate(rows)
@@ -92,29 +166,98 @@ def main() -> int:
         if not match:
             continue
         number = int(match.group(1))
-        if args.first is not None and not args.first <= number <= args.last:
-            continue
         current_name = row.get(name_column, "").strip()
         if not current_name:
-            raise ValueError(f"missing 模型名称（现） for {algorithm_id}")
+            continue
         result[f"1-4-J-{number}"] = {
             "number": number,
             "package": f"algo1-4-j-{number}",
             "original_name": row.get(original_name_column, "").strip() if original_name_column else "",
             "current_name": current_name,
+            "name_source": str(path),
         }
+    return result, id_column, name_column
 
-    if args.first is not None:
-        expected = {f"1-4-J-{number}" for number in range(args.first, args.last + 1)}
-        missing = sorted(expected - result.keys(), key=lambda item: int(item.rsplit("-", 1)[1]))
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--algorithms-root", required=True, type=Path)
+    parser.add_argument("--xlsx", type=Path, help="optional workbook containing 模型名称（现）")
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--first", type=int)
+    parser.add_argument("--last", type=int)
+    args = parser.parse_args()
+    if (args.first is None) != (args.last is None):
+        parser.error("--first and --last must be supplied together")
+    if args.first is not None and args.first > args.last:
+        parser.error("--first must not be greater than --last")
+
+    try:
+        packages = discover_packages(args.algorithms_root, args.first, args.last)
+    except ValueError as exc:
+        parser.error(str(exc))
+    workbook_available = args.xlsx is not None and args.xlsx.is_file()
+    if args.xlsx is not None and not workbook_available:
+        print(f"WARNING: naming workbook not found: {args.xlsx}", file=sys.stderr)
+        print("WARNING: resolving names from existing DOCX files", file=sys.stderr)
+
+    if workbook_available:
+        try:
+            workbook_names, id_column, name_column = load_workbook_names(args.xlsx)
+        except (KeyError, StopIteration, ValueError, zipfile.BadZipFile) as exc:
+            parser.error(f"cannot read naming workbook {args.xlsx}: {exc}")
+        result: dict[str, dict[str, str]] = {}
+        missing: list[str] = []
+        for number, package in packages:
+            algorithm_id = f"1-4-J-{number}"
+            item = workbook_names.get(algorithm_id)
+            if item is None:
+                missing.append(algorithm_id)
+                continue
+            try:
+                existing_name, existing_source = name_from_existing_documents(
+                    args.algorithms_root / package
+                )
+            except ValueError:
+                existing_name = ""
+                existing_source = None
+            result[algorithm_id] = {
+                **item,
+                "package": package,
+                "existing_document_name": existing_name,
+                "existing_document_source": str(existing_source) if existing_source else "",
+                "name_matches_existing_document": (
+                    item["current_name"] == existing_name if existing_name else None
+                ),
+            }
         if missing:
-            raise ValueError(f"missing identifiers in workbook: {missing}")
-    if not result:
-        raise ValueError("no topic-one algorithm identifiers were found")
+            parser.error(f"algorithm folders missing from naming workbook: {missing}")
+        source = str(args.xlsx)
+        naming_mode = "workbook"
+    else:
+        id_column = None
+        name_column = None
+        result = {}
+        for number, package in packages:
+            package_dir = args.algorithms_root / package
+            try:
+                current_name, name_source = name_from_existing_documents(package_dir)
+            except ValueError as exc:
+                parser.error(str(exc))
+            result[f"1-4-J-{number}"] = {
+                "number": number,
+                "package": package,
+                "original_name": "",
+                "current_name": current_name,
+                "name_source": str(name_source),
+            }
+        source = None
+        naming_mode = "existing-document"
 
     payload = {
-        "source": str(args.xlsx),
-        "sheet": "工作表1",
+        "naming_mode": naming_mode,
+        "source": source,
+        "sheet": "工作表1" if workbook_available else None,
         "id_column": id_column,
         "current_name_column": name_column,
         "algorithms": result,

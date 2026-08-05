@@ -1,4 +1,4 @@
 interface:
   display_name: "课题一算法文档"
-  short_description: "生成并校验ATS课题一Docker算法测试说明和模型原理说明文档"
-  default_prompt: "Use $ats-kt1-algorithm-docs to inspect a topic-one Docker algorithm and generate template-matched test-description and model-principle DOCX files."
+  short_description: "按参考模板生成并校验ATS课题一算法的两类DOCX文档"
+  default_prompt: "Use $ats-kt1-algorithm-docs to inspect a topic-one Docker algorithm, apply the provided DOCX references, and use the optional naming workbook when available."

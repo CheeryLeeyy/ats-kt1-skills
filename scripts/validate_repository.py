@@ -77,6 +77,8 @@ def main() -> int:
         "### 2. 填写模型原理说明",
         "后续新生成的测试说明和模型原理说明必须全部使用映射表中的最新名称",
         "Docker 实际运行用于核实当前提交包",
+        "如果算法文件夹内已有同名模型原理说明",
+        "依次使用 `-old-2`、`-old-3`",
     ):
         if required_text not in readme_text:
             errors.append(f"README.md is missing required workflow text: {required_text}")
@@ -84,6 +86,14 @@ def main() -> int:
     agent_text = (SKILL / "agents/openai.yaml").read_text(encoding="utf-8")
     if "$ats-kt1-algorithm-docs" not in agent_text:
         errors.append("agents/openai.yaml default_prompt does not name the skill")
+
+    for generator in (
+        SKILL / "scripts/generate_test_doc.py",
+        SKILL / "scripts/generate_model_principle_docs.py",
+    ):
+        generator_text = generator.read_text(encoding="utf-8")
+        if "def archive_existing(" not in generator_text or "-old-{index}" not in generator_text:
+            errors.append(f"DOCX generator does not archive existing output: {generator.name}")
 
     for path in text_files():
         try:

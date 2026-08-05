@@ -417,7 +417,19 @@ def strip_content_types(xml_bytes: bytes) -> bytes:
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
-def create_docx(template: Path, output: Path, document_xml: bytes) -> None:
+def archive_existing(output: Path) -> Path | None:
+    if not output.exists():
+        return None
+    archived = output.with_name(f"{output.stem}-old{output.suffix}")
+    index = 2
+    while archived.exists():
+        archived = output.with_name(f"{output.stem}-old-{index}{output.suffix}")
+        index += 1
+    output.replace(archived)
+    return archived
+
+
+def create_docx(template: Path, output: Path, document_xml: bytes) -> Path | None:
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=output.stem + "-", suffix=".docx", dir=output.parent)
     os.close(fd)
@@ -445,7 +457,9 @@ def create_docx(template: Path, output: Path, document_xml: bytes) -> None:
                 elif name == "[Content_Types].xml":
                     payload = strip_content_types(payload)
                 target.writestr(info, payload)
+        archived = archive_existing(output)
         temp_path.replace(output)
+        return archived
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
@@ -465,7 +479,9 @@ def main() -> int:
     with zipfile.ZipFile(args.template, "r") as archive:
         template_xml = archive.read("word/document.xml")
     document_xml = build_document(template_xml, data)
-    create_docx(args.template, args.output, document_xml)
+    archived = create_docx(args.template, args.output, document_xml)
+    if archived:
+        print(f"archived: {archived}")
     print(args.output)
     return 0
 

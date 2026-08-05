@@ -199,7 +199,19 @@ def strip_content_types(payload: bytes) -> bytes:
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
-def create_docx(template: Path, output: Path, data: dict, diagrams: Path) -> None:
+def archive_existing(output: Path) -> Path | None:
+    if not output.exists():
+        return None
+    archived = output.with_name(f"{output.stem}-old{output.suffix}")
+    index = 2
+    while archived.exists():
+        archived = output.with_name(f"{output.stem}-old-{index}{output.suffix}")
+        index += 1
+    output.replace(archived)
+    return archived
+
+
+def create_docx(template: Path, output: Path, data: dict, diagrams: Path) -> Path | None:
     package = data["package_name"]
     with zipfile.ZipFile(template) as source:
         members = {name: source.read(name) for name in source.namelist()}
@@ -222,7 +234,9 @@ def create_docx(template: Path, output: Path, data: dict, diagrams: Path) -> Non
         with zipfile.ZipFile(temp, "w", compression=zipfile.ZIP_DEFLATED) as target:
             for name, payload in members.items():
                 target.writestr(name, payload)
+        archived = archive_existing(output)
         os.replace(temp, output)
+        return archived
     finally:
         if temp.exists():
             temp.unlink()
@@ -238,7 +252,9 @@ def main() -> int:
     for data_path in sorted(args.data_dir.glob("algo1-4-j-*.json"), key=lambda p: int(p.stem.rsplit("-", 1)[1])):
         data = json.loads(data_path.read_text(encoding="utf-8"))
         output = args.output_dir / f"{data['package_name']}模型原理说明.docx"
-        create_docx(args.template, output, data, args.diagrams)
+        archived = create_docx(args.template, output, data, args.diagrams)
+        if archived:
+            print(f"archived: {archived}")
         print(output)
     return 0
 

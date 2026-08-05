@@ -52,6 +52,7 @@ def main() -> int:
             errors.append(f"required file missing: {path.relative_to(ROOT)}")
 
     skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    readme_text = (ROOT / "README.md").read_text(encoding="utf-8")
     if not skill_text.startswith("---\nname: ats-kt1-algorithm-docs\ndescription:"):
         errors.append("SKILL.md frontmatter is invalid")
     if skill_text.find("\n---\n", 4) == -1:
@@ -69,6 +70,16 @@ def main() -> int:
     ):
         if required_text not in skill_text:
             errors.append(f"SKILL.md is missing required workflow text: {required_text}")
+    for required_text in (
+        "## 整体运行流程",
+        "### 0. 确定算法名称",
+        "### 1. 运行 Docker 并同步填写测试说明",
+        "### 2. 填写模型原理说明",
+        "后续新生成的测试说明和模型原理说明必须全部使用映射表中的最新名称",
+        "Docker 实际运行用于核实当前提交包",
+    ):
+        if required_text not in readme_text:
+            errors.append(f"README.md is missing required workflow text: {required_text}")
 
     agent_text = (SKILL / "agents/openai.yaml").read_text(encoding="utf-8")
     if "$ats-kt1-algorithm-docs" not in agent_text:

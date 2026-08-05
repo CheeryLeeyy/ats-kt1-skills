@@ -95,6 +95,19 @@ def table_row(sample: ET.Element, values: list[str]) -> ET.Element:
     return result
 
 
+def set_vertical_merge(cell: ET.Element, *, restart: bool) -> None:
+    """Merge one label cell vertically across its following detail rows."""
+    props = cell.find(W + "tcPr")
+    if props is None:
+        props = ET.Element(W + "tcPr")
+        cell.insert(0, props)
+    for marker in list(props.findall(W + "vMerge")):
+        props.remove(marker)
+    marker = ET.SubElement(props, W + "vMerge")
+    if restart:
+        marker.set(W + "val", "restart")
+
+
 def build_table(sample: ET.Element, data: dict) -> ET.Element:
     rows = sample.findall(W + "tr")
     metadata_sample = next(row for row in rows if len(row.findall(W + "tc")) == 2)
@@ -109,15 +122,25 @@ def build_table(sample: ET.Element, data: dict) -> ET.Element:
         ("模型编号", data["algorithm_id"]),
         ("模型名称", data["algorithm_name"]),
         ("模型功能描述", data["function_description"]),
-        ("输入数据要求", data["input_summary"]),
     ]
     for label, value in metadata:
         result.append(table_row(metadata_sample, [label, value]))
+
+    input_summary_row = table_row(metadata_sample, ["输入数据要求", data["input_summary"]])
+    set_vertical_merge(input_summary_row.findall(W + "tc")[0], restart=True)
+    result.append(input_summary_row)
     for item in data["inputs"]:
-        result.append(table_row(detail_sample, ["", item["name"], item["detail"]]))
-    result.append(table_row(metadata_sample, ["输出数据要求", data["output_summary"]]))
+        detail_row = table_row(detail_sample, ["", item["name"], item["detail"]])
+        set_vertical_merge(detail_row.findall(W + "tc")[0], restart=False)
+        result.append(detail_row)
+
+    output_summary_row = table_row(metadata_sample, ["输出数据要求", data["output_summary"]])
+    set_vertical_merge(output_summary_row.findall(W + "tc")[0], restart=True)
+    result.append(output_summary_row)
     for item in data["outputs"]:
-        result.append(table_row(detail_sample, ["", item["name"], item["detail"]]))
+        detail_row = table_row(detail_sample, ["", item["name"], item["detail"]])
+        set_vertical_merge(detail_row.findall(W + "tc")[0], restart=False)
+        result.append(detail_row)
     for label, value in (
         ("模型服务场景", data["service_scene"]),
         ("上游接口模型编号", data["upstream_model_id"]),

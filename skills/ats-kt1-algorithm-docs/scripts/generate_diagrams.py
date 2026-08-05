@@ -6,11 +6,28 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 from pathlib import Path
 
 
 def wrap(text: str, width: int) -> list[str]:
-    return [text[index : index + width] for index in range(0, len(text), width)] or [""]
+    units = re.findall(r"[A-Za-z0-9_.<>/—-]+|.", text)
+    lines: list[str] = []
+    current = ""
+    for unit in units:
+        if len(current) + len(unit) <= width:
+            current += unit
+            continue
+        if current:
+            lines.append(current)
+        if len(unit) <= width:
+            current = unit
+        else:
+            lines.extend(unit[index : index + width] for index in range(0, len(unit), width))
+            current = ""
+    if current:
+        lines.append(current)
+    return lines or [""]
 
 
 def text_lines(text: str, x: int, y: int, width: int, line_height: int = 26, size: int = 22) -> str:
@@ -23,9 +40,29 @@ def text_lines(text: str, x: int, y: int, width: int, line_height: int = 26, siz
     return f'<text text-anchor="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="{size}" fill="#17324d">{spans}</text>'
 
 
+def compact_name(value: str, width: int = 24) -> str:
+    value = str(value)
+    if len(value) <= width:
+        return value
+    tail = value.rsplit("/", 1)[-1]
+    prefix = "test_dataset/…/" if value.startswith("test_dataset/") else "…/"
+    candidate = prefix + tail
+    if len(candidate) <= width:
+        return candidate
+    keep = max(6, (width - 1) // 2)
+    return tail[:keep] + "…" + tail[-keep:]
+
+
+def compact_items(items: list[dict], limit: int = 2) -> str:
+    labels = [compact_name(item["name"]) for item in items[:limit]]
+    if len(items) > limit:
+        labels.append(f"等{len(items)}项")
+    return "、".join(labels)
+
+
 def input_output_text(data: dict) -> str:
-    inputs = "、".join(item["name"] for item in data["inputs"])
-    outputs = "、".join(item["name"] for item in data["outputs"])
+    inputs = compact_items(data["inputs"])
+    outputs = compact_items(data["outputs"])
     return f"输入：{inputs}；输出：{outputs}"
 
 
@@ -57,7 +94,7 @@ def framework(data: dict) -> str:
 
 def flow(data: dict) -> str:
     steps = data["flow_steps"]
-    height = 1040
+    height = 1060
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="900" height="{height}" viewBox="0 0 900 {height}">',
         f'<rect width="900" height="{height}" fill="white"/>',
@@ -65,7 +102,7 @@ def flow(data: dict) -> str:
         f'<text x="450" y="42" text-anchor="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="25" font-weight="bold" fill="#17324d">{html.escape(data["algorithm_id"])} 算法模型流程</text>',
         text_lines(input_output_text(data), 450, 72, 42, line_height=18, size=15),
     ]
-    top = 90
+    top = 110
     for index, step in enumerate(steps):
         y = top + index * 155
         fill = "#eaf2ff" if index % 2 == 0 else "#edf8f2"

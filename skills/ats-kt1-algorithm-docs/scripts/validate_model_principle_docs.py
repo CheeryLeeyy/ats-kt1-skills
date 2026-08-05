@@ -21,6 +21,13 @@ def element_text(element: ET.Element) -> str:
     return "".join(node.text or "" for node in element.iter(W + "t")).strip()
 
 
+def vertical_merge_value(cell: ET.Element) -> str | None:
+    marker = cell.find(f"{W}tcPr/{W}vMerge")
+    if marker is None:
+        return None
+    return marker.get(W + "val", "continue")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--docx", required=True, type=Path)
@@ -107,13 +114,31 @@ def main() -> int:
                 errors.append(f"blank template field label missing: {label}")
         if tables:
             values_by_label = {}
-            for row in tables[0].iter(W + "tr"):
+            rows = list(tables[0].iter(W + "tr"))
+            for row in rows:
                 cells = list(row.findall(W + "tc"))
                 if len(cells) == 2:
                     values_by_label[element_text(cells[0])] = element_text(cells[1])
             for label in blank_labels:
                 if values_by_label.get(label, "").strip():
                     errors.append(f"template field must stay blank: {label}")
+
+            row_labels = [element_text(list(row.findall(W + "tc"))[0]) for row in rows]
+            for label, next_label in (("输入数据要求", "输出数据要求"), ("输出数据要求", "模型服务场景")):
+                if label not in row_labels or next_label not in row_labels:
+                    errors.append(f"cannot inspect vertically merged table group: {label}")
+                    continue
+                start_index = row_labels.index(label)
+                end_index = row_labels.index(next_label)
+                group = rows[start_index:end_index]
+                if len(group) < 2:
+                    errors.append(f"{label} has no detailed file rows")
+                    continue
+                first_cells = [list(row.findall(W + "tc"))[0] for row in group]
+                if vertical_merge_value(first_cells[0]) != "restart":
+                    errors.append(f"{label} label cell does not start a vertical merge")
+                if any(vertical_merge_value(cell) != "continue" for cell in first_cells[1:]):
+                    errors.append(f"{label} label cell does not span all detailed file rows")
 
         nodes = [str(value).strip() for value in data.get("framework_nodes", [])]
         if len(nodes) != 6 or any(("：" not in value and ":" not in value) for value in nodes):

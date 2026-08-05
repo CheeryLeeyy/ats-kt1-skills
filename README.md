@@ -43,3 +43,7 @@ Word 生成和大部分校验脚本仅使用 Python 标准库。Docker 实测需
 ## 许可
 
 本仓库尚未声明开源许可证。在添加许可证前，默认保留所有权利。
+
+## 致谢
+
+感谢 [jexxl/ats-skills](https://github.com/jexxl/ats-skills) 提供的仓库结构和 Skills 组织思路，本项目在此基础上结合自主式交通系统（ATS）计算技术课题一的算法模型文档要求进行了定制。

@@ -15,6 +15,11 @@ def main() -> int:
     parser.add_argument("--svg-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--libreoffice", default="libreoffice")
+    parser.add_argument(
+        "--preserve-existing-png",
+        action="store_true",
+        help="do not re-encode PNG files copied from an existing document",
+    )
     args = parser.parse_args()
     svg_files = sorted(args.svg_dir.glob("algo1-4-j-*.svg"))
     if not svg_files:
@@ -25,6 +30,10 @@ def main() -> int:
         environment = dict(os.environ)
         environment.setdefault("SAL_USE_VCLPLUGIN", "svp")
         for path in svg_files:
+            output = args.output_dir / f"{path.stem}.png"
+            if args.preserve_existing_png and output.is_file():
+                print(f"preserved: {output}")
+                continue
             command = [
                 args.libreoffice,
                 f"-env:UserInstallation=file://{profile}",
@@ -39,13 +48,11 @@ def main() -> int:
             if completed.returncode != 0:
                 detail = completed.stderr.strip() or completed.stdout.strip()
                 raise RuntimeError(f"failed to render {path.name}: {detail}")
-            output = args.output_dir / f"{path.stem}.png"
             if not output.is_file():
                 detail = "\n".join(part for part in (completed.stdout.strip(), completed.stderr.strip()) if part)
                 raise RuntimeError(f"LibreOffice did not render {path.name}: {detail}")
 
-    for path in svg_files:
-        print(args.output_dir / f"{path.stem}.png")
+            print(output)
     return 0
 
 

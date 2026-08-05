@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 
@@ -63,10 +64,41 @@ def main() -> int:
         spec = json.loads(spec_path.read_text(encoding="utf-8"))
         intro = spec.get("intro_paragraphs")
         nodes = spec.get("framework_nodes")
-        if not isinstance(intro, list) or len([value for value in intro if str(value).strip()]) < 4:
+        flow_steps = spec.get("flow_steps")
+        if not isinstance(intro, list):
+            raise ValueError(f"{package} requires a list of introduction paragraphs")
+        intro = [str(value).strip() for value in intro if str(value).strip()]
+        if len(intro) < 4:
             raise ValueError(f"{package} requires at least four introduction paragraphs")
+        if len("".join(intro)) < 350:
+            raise ValueError(f"{package} introduction must contain at least 350 characters")
         if not isinstance(nodes, list) or len(nodes) != 6:
             raise ValueError(f"{package} requires exactly six framework nodes")
+        nodes = [str(value).strip() for value in nodes]
+        for node in nodes:
+            separator = "：" if "：" in node else ":" if ":" in node else ""
+            if not separator:
+                raise ValueError(f"{package} framework node needs 模块名：作用说明: {node}")
+            name, detail = (part.strip() for part in node.split(separator, 1))
+            if not name or len(detail) < 6:
+                raise ValueError(f"{package} framework node description is too short: {node}")
+        if not isinstance(flow_steps, list) or len(flow_steps) != 6:
+            raise ValueError(f"{package} requires exactly six detailed flow steps")
+        flow_steps = [str(value).strip() for value in flow_steps]
+        if any(len(value) < 12 for value in flow_steps):
+            raise ValueError(f"{package} flow steps must explain data processing in detail")
+        normalized_flow = [
+            re.sub(r"^步骤\s*\d+\s*[：:]\s*", "", value).strip() for value in flow_steps
+        ]
+        if normalized_flow == nodes or set(normalized_flow) == set(nodes):
+            raise ValueError(f"{package} flow steps must not duplicate or reorder framework nodes")
+        if not any(token in normalized_flow[0] for token in ("输入", "读取", "接收", "加载")):
+            raise ValueError(f"{package} first flow step must start from input data")
+        if not any(token in normalized_flow[-1] for token in ("输出", "写入", "保存", "生成")):
+            raise ValueError(f"{package} last flow step must produce the output data")
+        for key in ("upstream_model_id", "downstream_model_id", "delivery_time"):
+            if str(spec.get(key, "")).strip():
+                raise ValueError(f"{package} {key} must stay blank per template comments")
 
         inputs = [
             {"name": item["name"], "detail": content_summary(item)}
@@ -88,13 +120,13 @@ def main() -> int:
             "output_summary": "模型运行后输出文件及其字段与对应测试说明保持一致，主要包括：" + "、".join(item["name"] for item in outputs) + "。",
             "outputs": outputs,
             "service_scene": require_text(spec, "service_scene"),
-            "upstream_model_id": str(spec.get("upstream_model_id", "")),
-            "downstream_model_id": str(spec.get("downstream_model_id", "")),
-            "delivery_time": str(spec.get("delivery_time", "")),
+            "upstream_model_id": "",
+            "downstream_model_id": "",
+            "delivery_time": "",
             "responsible_unit": str(spec.get("responsible_unit", "北京邮电大学")),
-            "intro_paragraphs": [str(value).strip() for value in intro if str(value).strip()],
-            "framework_nodes": [str(value).strip() for value in nodes],
-            "flow_steps": spec.get("flow_steps") or [f"步骤{index}：{node}" for index, node in enumerate(nodes, 1)],
+            "intro_paragraphs": intro,
+            "framework_nodes": nodes,
+            "flow_steps": flow_steps,
         }
         output = args.output_dir / f"{package}.json"
         output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

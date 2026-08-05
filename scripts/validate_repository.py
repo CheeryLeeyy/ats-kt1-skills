@@ -21,6 +21,9 @@ REQUIRED = (
     SKILL / "assets/模型原理说明-示例.docx",
     SKILL / "references/算法提交说明.md",
     SKILL / "references/数据结构规范.md",
+    SKILL / "references/模型原理说明模板要求.md",
+    SKILL / "scripts/extract_docx_comments.py",
+    SKILL / "scripts/extract_existing_diagrams.py",
 )
 TEXT_SUFFIXES = {".md", ".py", ".yaml", ".yml", ".txt", ".json", ".gitignore"}
 BLOCKED_PATTERNS = {
@@ -67,6 +70,10 @@ def main() -> int:
         "不使用 `algo1-4-j-N` 文件夹编号冒充模型名称",
         "测试说明参考模板或示例",
         "模型原理说明参考模板或示例",
+        "references/模型原理说明模板要求.md",
+        "extract_existing_diagrams.py",
+        "--missing-only",
+        "--preserve-existing-png",
     ):
         if required_text not in skill_text:
             errors.append(f"SKILL.md is missing required workflow text: {required_text}")
@@ -79,9 +86,26 @@ def main() -> int:
         "Docker 实际运行用于核实当前提交包",
         "如果算法文件夹内已有同名模型原理说明",
         "依次使用 `-old-2`、`-old-3`",
+        "如果两类旧文档都不存在，继续检查文件夹内的其他 DOCX、PDF、Markdown、TXT 等文档",
+        "最新命名 Excel 只能用于确定名称，不能替代算法描述文件",
     ):
         if required_text not in readme_text:
             errors.append(f"README.md is missing required workflow text: {required_text}")
+
+    model_requirement_text = (SKILL / "references/模型原理说明模板要求.md").read_text(
+        encoding="utf-8"
+    )
+    for required_text in (
+        "上游接口模型编号",
+        "至少写 4 个实质段落",
+        "不出现原始论文的英文算法名",
+        "每个模块同时给出中文模块名和简短作用说明",
+        "按顺序说明数据如何流经各模块",
+        "只有少量英文辅助标注",
+        "不得只是框架图的纵向版本",
+    ):
+        if required_text not in model_requirement_text:
+            errors.append(f"model-principle comment rule is missing: {required_text}")
 
     agent_text = (SKILL / "agents/openai.yaml").read_text(encoding="utf-8")
     if "$ats-kt1-algorithm-docs" not in agent_text:
@@ -123,9 +147,21 @@ def main() -> int:
                     errors.append(f"personal core metadata remains in {asset.name}")
                 if "word/comments.xml" in archive.namelist():
                     comments = ET.fromstring(archive.read("word/comments.xml"))
-                    authors = {comment.get(W + "author", "") for comment in comments.iter(W + "comment")}
+                    comment_nodes = list(comments.iter(W + "comment"))
+                    authors = {comment.get(W + "author", "") for comment in comment_nodes}
                     if authors != {"ATS课题一"}:
                         errors.append(f"personal comment author metadata remains in {asset.name}: {sorted(authors)}")
+                    if asset.name == "模型原理说明-示例.docx":
+                        comment_text = "".join(
+                            node.text or "" for comment in comment_nodes for node in comment.iter(W + "t")
+                        )
+                        if len(comment_nodes) != 4:
+                            errors.append(
+                                f"model-principle template must retain four comment groups, found {len(comment_nodes)}"
+                            )
+                        for marker in ("空着不用填", "公式和符号", "自己画", "数据流程"):
+                            if marker not in comment_text:
+                                errors.append(f"model-principle template comment marker missing: {marker}")
         except zipfile.BadZipFile:
             errors.append(f"invalid DOCX asset: {asset.name}")
 

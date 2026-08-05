@@ -15,13 +15,16 @@ description: 为自主式交通系统（ATS）计算技术课题一 Docker 算�
 
 - 开始前完整读取 `references/算法提交说明.md`；Docker 运行失败、修复镜像、整理提交目录或调整 `params.json` 时重新对照该文件逐项检查。
 - 准备结构化数据时读取 `references/数据结构规范.md`。
+- 填写模型原理说明前完整读取 `references/模型原理说明模板要求.md`，逐条落实从模板批注整理出的规则。
 - 生成测试说明前必须取得一份测试说明参考模板或示例；默认使用 `assets/测试说明-示例.docx`。
 - 生成模型原理说明前必须取得一份模型原理说明参考模板或示例；默认使用 `assets/模型原理说明-示例.docx`。
 - 将模板批注作为编写要求，最终 Word 不保留批注、批注锚点或兼容性残留。
 
 用户提供的现场模板或示例优先于 skill 内置资产。两类文档的参考模板或示例均不可用时，停止生成并请求提供，不自行猜测版式。现场文件与 skill 资产不同时，记录实际使用文件的 SHA-256。
 
-最新命名 XLSX 是可选输入。有可用文件时，读取“模型名称（现）”并按算法编号核对；没有时，从该算法文件夹内已有测试说明或模型原理说明的“模型名称”字段读取。没有 Excel 且内部文档也没有可识别名称时，停止并请求补充名称，不使用 `algo1-4-j-N` 文件夹编号冒充模型名称。内部文档仅作为无命名表时的回退来源，不能替代已经提供的最新命名表。
+最新命名 XLSX 是可选输入。有可用文件时，读取“模型名称（现）”并按算法编号核对；没有时，优先从该算法文件夹内已有测试说明或模型原理说明的“模型名称”字段读取，两类旧文档缺失时再从其他相关文档读取。没有 Excel 且内部文档也没有可识别名称时，停止并请求补充名称，不使用 `algo1-4-j-N` 文件夹编号冒充模型名称。内部文档仅作为无命名表时的回退来源，不能替代已经提供的最新命名表。
+
+优先将算法文件夹内的旧测试说明和旧模型原理说明作为算法事实来源。两类旧文档都不存在时，继续检查同目录及其子目录中的其他 DOCX、PDF、Markdown、TXT 等文档；只有文档确实包含算法原理、模块组成、处理流程、输入输出、指标或性能说明时才作为替代事实来源。若没有任何相关内容，无论是否有最新命名 Excel，都立即停止，不运行 Docker、不生成新文档，并请求用户提供详细的模型算法描述文件。命名表不能替代算法描述文件。
 
 ## 目录与命名
 
@@ -62,7 +65,7 @@ python scripts/extract_latest_names.py \
 
 ### 0. 确定名称
 
-盘点参考模板和算法文件夹内已有 Word。有最新命名 Excel 时，按算法编号比较“模型名称（现）”与内部文档名称；不同时将最新名称用于后续所有新文档的基本信息、正文和图表，相同时沿用内部文档名称。没有 Excel 时读取内部文档的“模型名称”。两种来源都无法提供名称时停止并请求补充。
+盘点参考模板和算法文件夹内已有 Word。既没有旧测试说明也没有旧模型原理说明时，检查其他文档是否包含相关算法内容；存在相关内容则作为替代依据，完全没有时请求详细模型算法描述文件并停止后续工作。有最新命名 Excel 时，按算法编号比较“模型名称（现）”与内部文档名称；不同时将最新名称用于后续所有新文档的基本信息、正文和图表，相同时沿用内部文档名称。没有 Excel 时读取内部文档的“模型名称”。两种来源都无法提供名称时停止并请求补充。
 
 ### 1. 运行 Docker 并同步填写测试说明
 
@@ -137,11 +140,20 @@ python scripts/validate_test_doc.py \
 以同一算法的旧模型原理说明作为设计与模块细节依据，使用当前名称按最新模板重建。不复制过时名称、错误图示或其他算法内容。
 
 - 从已校验的测试 JSON 直接复用输入/输出文件名、格式、字段和中文解释。
-- 将 `2 算法模型简介` 写成至少 4 个有实质内容的段落，说明问题、组成模块、处理链路和关键配置/输出。
-- 根据当前算法自行绘制框架图和流程图，不使用论文、旧 Word 或运行界面截图。
+- 将 `2 算法模型简介` 写成至少 4 个有实质内容且合计不少于 350 个中文字符的段落，说明问题、组成模块、处理链路和关键配置/输出；适合时使用公式和符号并解释含义。
+- 不写与自主式交通系统或当前算法无关的文字和图片；正文不出现原始论文的英文算法名、英文模型名、英文模块名或英文全称，改写为准确的中文功能名称。
+- 先从旧模型原理说明直接提取内嵌的框架图和流程图。旧图与最新名称、当前输入输出和模块设计一致时复制复用，不对旧 Word 截图；缺少或过时的图才根据当前算法自行绘制，不使用论文、网页或运行界面截图。旧图含少量只用于辅助标注的英文名称时，若正文未使用、也不代表整个算法或关键模块，可以保留。
+- 明确区分两图：框架图介绍子模块、模块职责和模块间关系，每个模块写明中文名称和作用；流程图从真实输入到真实输出说明先后步骤以及数据的读取、处理、传递、融合和写出方式。不得将同一组模块简单换序或换版式充当两幅图；两图输入输出必须与测试说明一致。
 - 按模板要求将上游接口模型编号、下游接口模型编号和交付时间留空。
 
-先为每个算法编写简介与六节点框架 spec，再运行：
+使用下列命令检查当前模型原理说明模板批注；现场模板不同时也运行一次并逐条核对：
+
+```bash
+python scripts/extract_docx_comments.py \
+  --docx assets/模型原理说明-示例.docx
+```
+
+先为每个算法编写简介与六节点框架 spec。随后从旧模型原理说明提取可复用图片，再以 `--missing-only` 只生成缺少的图：
 
 ```bash
 python scripts/prepare_model_principle_data.py \
@@ -149,10 +161,16 @@ python scripts/prepare_model_principle_data.py \
   --test-data-dir /work/test-data \
   --spec-dir /work/model-specs \
   --output-dir /work/model-data
+python scripts/extract_existing_diagrams.py \
+  --docx /path/to/algo1-4-j-N模型原理说明-old.docx \
+  --package algo1-4-j-N \
+  --output-dir /work/diagrams \
+  --manifest /work/diagrams/algo1-4-j-N-existing.json
 python scripts/generate_diagrams.py \
-  --data-dir /work/model-data --output-dir /work/diagrams
+  --data-dir /work/model-data --output-dir /work/diagrams --missing-only
 python scripts/render_svg_diagrams.py \
-  --svg-dir /work/diagrams --output-dir /work/diagrams
+  --svg-dir /work/diagrams --output-dir /work/diagrams \
+  --preserve-existing-png
 python scripts/generate_model_principle_docs.py \
   --template assets/模型原理说明-示例.docx \
   --data-dir /work/model-data --diagrams /work/diagrams \
@@ -161,6 +179,8 @@ python scripts/validate_model_principle_docs.py \
   --docx /work/docs/algo1-4-j-N模型原理说明.docx \
   --data /work/model-data/algo1-4-j-N.json
 ```
+
+旧模型原理说明不存在或没有可识别图片时，跳过提取命令，`--missing-only` 会生成两幅图。提取后必须人工查看复用图；含错误输入输出、以旧英文名称代表整个算法或关键模块、论文截图、无关内容或不可读文字时删除对应提取结果，让生成器补画；只有少量非关键英文辅助标注时可以保留。
 
 ## 校验与清理
 

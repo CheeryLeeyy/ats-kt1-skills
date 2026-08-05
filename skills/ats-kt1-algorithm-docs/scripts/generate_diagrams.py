@@ -23,6 +23,12 @@ def text_lines(text: str, x: int, y: int, width: int, line_height: int = 26, siz
     return f'<text text-anchor="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="{size}" fill="#17324d">{spans}</text>'
 
 
+def input_output_text(data: dict) -> str:
+    inputs = "、".join(item["name"] for item in data["inputs"])
+    outputs = "、".join(item["name"] for item in data["outputs"])
+    return f"输入：{inputs}；输出：{outputs}"
+
+
 def framework(data: dict) -> str:
     nodes = data["framework_nodes"]
     parts = [
@@ -30,8 +36,9 @@ def framework(data: dict) -> str:
         '<rect width="1200" height="520" fill="white"/>',
         '<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto"><path d="M0,0 L0,8 L11,4 z" fill="#3976b8"/></marker></defs>',
         f'<text x="600" y="42" text-anchor="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="bold" fill="#17324d">{html.escape(data["algorithm_id"])} 算法模型框架</text>',
+        text_lines(input_output_text(data), 600, 76, 52, line_height=18, size=15),
     ]
-    positions = [(80, 105), (410, 105), (740, 105), (740, 330), (410, 330), (80, 330)]
+    positions = [(80, 110), (410, 110), (740, 110), (740, 335), (410, 335), (80, 335)]
     centers = [(x + 145, y + 70) for x, y in positions]
     colors = ["#eaf2ff", "#edf8f2", "#fff4df", "#f3edff", "#eaf7fb", "#f8eff1"]
     for index, ((x, y), node) in enumerate(zip(positions, nodes)):
@@ -56,8 +63,9 @@ def flow(data: dict) -> str:
         f'<rect width="900" height="{height}" fill="white"/>',
         '<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto"><path d="M0,0 L0,8 L11,4 z" fill="#3976b8"/></marker></defs>',
         f'<text x="450" y="42" text-anchor="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="25" font-weight="bold" fill="#17324d">{html.escape(data["algorithm_id"])} 算法模型流程</text>',
+        text_lines(input_output_text(data), 450, 72, 42, line_height=18, size=15),
     ]
-    top = 75
+    top = 90
     for index, step in enumerate(steps):
         y = top + index * 155
         fill = "#eaf2ff" if index % 2 == 0 else "#edf8f2"
@@ -73,12 +81,21 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument(
+        "--missing-only",
+        action="store_true",
+        help="keep extracted PNG/SVG diagrams and generate only missing kinds",
+    )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for path in sorted(args.data_dir.glob("algo1-4-j-*.json"), key=lambda p: int(p.stem.rsplit("-", 1)[1])):
         data = json.loads(path.read_text(encoding="utf-8"))
         for kind, payload in (("framework", framework(data)), ("flow", flow(data))):
+            existing_png = args.output_dir / f"{data['package_name']}-{kind}.png"
             output = args.output_dir / f"{data['package_name']}-{kind}.svg"
+            if args.missing_only and (existing_png.is_file() or output.is_file()):
+                print(f"reused: {existing_png if existing_png.is_file() else output}")
+                continue
             output.write_text(payload + "\n", encoding="utf-8")
             print(output)
     return 0

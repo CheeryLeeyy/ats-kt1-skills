@@ -15,9 +15,11 @@ from xml.etree import ElementTree as ET
 NS = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 PACKAGE_PATTERN = re.compile(r"algo1-4-j-(\d+)", re.IGNORECASE)
+DOCUMENT_SUFFIXES = {".docx", ".doc", ".pdf", ".md", ".txt"}
 MODEL_NAME_PATTERN = re.compile(
     r"^\s*模型名称(?:（现）)?(?:\d+)?\s*(?:[:：]\s*)?(.*?)\s*$"
 )
+MARKDOWN_MODEL_NAME_PATTERN = re.compile(r"^\s*\|\s*模型名称\s*\|\s*([^|]+?)\s*\|?\s*$")
 
 
 def cell_column(reference: str) -> str:
@@ -90,8 +92,16 @@ def docx_paragraphs(path: Path) -> list[str]:
 
 
 def extract_model_name(path: Path) -> str | None:
-    paragraphs = docx_paragraphs(path)
+    if path.suffix.lower() == ".docx":
+        paragraphs = docx_paragraphs(path)
+    elif path.suffix.lower() in {".md", ".txt"}:
+        paragraphs = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    else:
+        return None
     for index, paragraph in enumerate(paragraphs):
+        markdown_match = MARKDOWN_MODEL_NAME_PATTERN.fullmatch(paragraph)
+        if markdown_match:
+            return markdown_match.group(1).strip()
         match = MODEL_NAME_PATTERN.fullmatch(paragraph)
         if not match:
             continue
@@ -117,8 +127,32 @@ def document_priority(path: Path) -> tuple[int, int, str]:
     return document_type, old_marker, name
 
 
+def reference_documents(package_dir: Path) -> list[Path]:
+    documents = [
+        path
+        for path in package_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in DOCUMENT_SUFFIXES
+    ]
+    preferred = [
+        path
+        for path in documents
+        if "测试说明" in path.name or "模型原理说明" in path.name
+    ]
+    return sorted(preferred or documents, key=document_priority)
+
+
+def require_reference_documents(package_dir: Path) -> list[Path]:
+    candidates = reference_documents(package_dir)
+    if not candidates:
+        raise ValueError(
+            "no existing test-description, model-principle, or other supporting document under "
+            f"{package_dir}; stop and request a detailed model-algorithm description file"
+        )
+    return candidates
+
+
 def name_from_existing_documents(package_dir: Path) -> tuple[str, Path]:
-    candidates = sorted(package_dir.rglob("*.docx"), key=document_priority)
+    candidates = require_reference_documents(package_dir)
     unreadable: list[str] = []
     for path in candidates:
         try:
@@ -130,7 +164,7 @@ def name_from_existing_documents(package_dir: Path) -> tuple[str, Path]:
             return model_name, path
     detail = f"; unreadable documents: {unreadable}" if unreadable else ""
     raise ValueError(
-        f"could not find a 模型名称 field in existing DOCX files under {package_dir}{detail}"
+        f"could not find a 模型名称 field in existing supporting documents under {package_dir}{detail}"
     )
 
 
@@ -210,13 +244,18 @@ def main() -> int:
         missing: list[str] = []
         for number, package in packages:
             algorithm_id = f"1-4-J-{number}"
+            package_dir = args.algorithms_root / package
+            try:
+                require_reference_documents(package_dir)
+            except ValueError as exc:
+                parser.error(str(exc))
             item = workbook_names.get(algorithm_id)
             if item is None:
                 missing.append(algorithm_id)
                 continue
             try:
                 existing_name, existing_source = name_from_existing_documents(
-                    args.algorithms_root / package
+                    package_dir
                 )
             except ValueError:
                 existing_name = ""

@@ -6,12 +6,16 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import struct
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+ASVG = "{http://schemas.microsoft.com/office/drawing/2016/SVG/main}"
+WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
 FORBIDDEN_ENGLISH_NAMES = ("HierFL", "PointPillar", "DJSCC", "PILoRA", "VAE", "MFE", "SRE", "AQC", "Enhancing Communication", "ASC-CP", "DEVA")
 ALLOWED_ENGLISH_TERMS = {"CPU", "GPU", "JSON", "CSV", "NPY", "NPZ", "V2V", "V2X", "Docker"}
 UNRELATED_TERMS = ("小猫", "小狗", "猫咪", "宠物")
@@ -26,6 +30,12 @@ def vertical_merge_value(cell: ET.Element) -> str | None:
     if marker is None:
         return None
     return marker.get(W + "val", "continue")
+
+
+def png_dimensions(payload: bytes) -> tuple[int, int]:
+    if payload[:8] != b"\x89PNG\r\n\x1a\n" or payload[12:16] != b"IHDR":
+        raise ValueError("embedded diagram is not a supported PNG")
+    return struct.unpack(">II", payload[16:24])
 
 
 def main() -> int:
@@ -46,17 +56,29 @@ def main() -> int:
             names = set(archive.namelist())
             if any("comments" in name.lower() or name.lower().endswith("word/people.xml") for name in names):
                 errors.append("comment metadata remains")
-            for required_media in ("word/media/image1.png", "word/media/image2.png", "word/media/image3.svg"):
+            for required_media in ("word/media/image1.png", "word/media/image2.png"):
                 if required_media not in names:
                     errors.append(f"missing diagram media: {required_media}")
+            if any(name.lower().endswith(".svg") for name in names):
+                errors.append("SVG alternate diagram remains; Word may bypass the verified PNG")
             xml = archive.read("word/document.xml")
+            media_payloads = [
+                archive.read(name)
+                for name in ("word/media/image1.png", "word/media/image2.png")
+                if name in names
+            ]
     except Exception as exc:
         errors.append(f"cannot open DOCX: {exc}")
         xml = b""
+        media_payloads = []
     if xml:
         if b"Ignorable=" in xml or b"w14:" in xml:
             errors.append("Word compatibility markup remains")
         root = ET.fromstring(xml)
+        if any(True for _ in root.iter(A + "srcRect")):
+            errors.append("diagram crop metadata remains")
+        if any(True for _ in root.iter(ASVG + "svgBlip")):
+            errors.append("SVG alternate diagram reference remains")
         for marker in (W + "commentRangeStart", W + "commentRangeEnd", W + "commentReference"):
             if any(True for _ in root.iter(marker)):
                 errors.append(f"comment anchor remains: {marker.rsplit('}', 1)[-1]}")
@@ -103,6 +125,16 @@ def main() -> int:
                 errors.append(f"traffic-unrelated example remains: {term}")
         if sum(1 for _ in root.iter(W + "drawing")) != 2:
             errors.append("expected exactly two embedded diagrams")
+        drawing_extents = []
+        for drawing in root.iter(W + "drawing"):
+            extent = drawing.find(f".//{WP}extent")
+            if extent is not None:
+                drawing_extents.append((int(extent.get("cx", "0")), int(extent.get("cy", "0"))))
+        if len(drawing_extents) == 2 and len(media_payloads) == 2:
+            for index, ((cx, cy), payload) in enumerate(zip(drawing_extents, media_payloads), 1):
+                width, height = png_dimensions(payload)
+                if not cx or not cy or abs((cx / cy) / (width / height) - 1) > 0.01:
+                    errors.append(f"diagram {index} display aspect ratio does not match embedded image")
         tables = list(root.iter(W + "tbl"))
         if len(tables) != 1:
             errors.append(f"expected one basic-information table, found {len(tables)}")

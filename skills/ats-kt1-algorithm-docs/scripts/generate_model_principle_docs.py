@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import struct
 import tempfile
 import zipfile
 from copy import deepcopy
@@ -22,6 +23,8 @@ W14_NS = "http://schemas.microsoft.com/office/word/2010/wordml"
 XML_NS = "http://www.w3.org/XML/1998/namespace"
 W = f"{{{W_NS}}}"
 WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
+A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+ASVG = "{http://schemas.microsoft.com/office/drawing/2016/SVG/main}"
 
 
 def register_namespaces(xml_bytes: bytes) -> None:
@@ -157,10 +160,27 @@ def resize_drawing(paragraph: ET.Element, cx: str, cy: str) -> ET.Element:
     for extent in result.iter(WP + "extent"):
         extent.set("cx", cx)
         extent.set("cy", cy)
+    for transform in result.iter(A + "xfrm"):
+        extent = transform.find(A + "ext")
+        if extent is not None:
+            extent.set("cx", cx)
+            extent.set("cy", cy)
+    for parent in result.iter():
+        for crop in list(parent.findall(A + "srcRect")):
+            parent.remove(crop)
+    for extension_list in result.iter(A + "extLst"):
+        for extension in list(extension_list):
+            if any(True for _ in extension.iter(ASVG + "svgBlip")):
+                extension_list.remove(extension)
     return result
 
 
-def build_document(template_xml: bytes, data: dict) -> bytes:
+def build_document(
+    template_xml: bytes,
+    data: dict,
+    framework_extent: tuple[str, str],
+    flow_extent: tuple[str, str],
+) -> bytes:
     register_namespaces(template_xml)
     root = ET.fromstring(template_xml)
     body = root.find(W + "body")
@@ -188,10 +208,10 @@ def build_document(template_xml: bytes, data: dict) -> bytes:
     body.append(clone_paragraph(h1_intro, "2 算法模型简介"))
     for paragraph in data["intro_paragraphs"]:
         body.append(clone_paragraph(normal_sample, paragraph))
-    body.append(resize_drawing(framework_drawing, "5600000", "2426667"))
+    body.append(resize_drawing(framework_drawing, *framework_extent))
     body.append(clone_paragraph(caption_sample, "算法框架图"))
     body.append(clone_paragraph(h1_flow, "3 算法模型流程图"))
-    body.append(resize_drawing(flow_drawing, "4800000", "5546667"))
+    body.append(resize_drawing(flow_drawing, *flow_extent))
     body.append(deepcopy(section))
 
     root.attrib.pop(f"{{{MC_NS}}}Ignorable", None)
@@ -207,7 +227,8 @@ def strip_relationships(payload: bytes) -> bytes:
     root = ET.fromstring(payload)
     for child in list(root):
         relation_type = child.get("Type", "").lower()
-        if "comments" in relation_type or relation_type.endswith("/people"):
+        target = child.get("Target", "").lower()
+        if "comments" in relation_type or relation_type.endswith("/people") or target.endswith(".svg"):
             root.remove(child)
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
@@ -217,7 +238,8 @@ def strip_content_types(payload: bytes) -> bytes:
     root = ET.fromstring(payload)
     for child in list(root):
         part_name = child.get("PartName", "").lower()
-        if "comments" in part_name or part_name.endswith("/word/people.xml"):
+        extension = child.get("Extension", "").lower()
+        if "comments" in part_name or part_name.endswith("/word/people.xml") or extension == "svg":
             root.remove(child)
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
@@ -234,19 +256,37 @@ def archive_existing(output: Path) -> Path | None:
     return archived
 
 
+def png_dimensions(path: Path) -> tuple[int, int]:
+    payload = path.read_bytes()
+    if payload[:8] != b"\x89PNG\r\n\x1a\n" or payload[12:16] != b"IHDR":
+        raise ValueError(f"diagram is not a supported PNG: {path}")
+    return struct.unpack(">II", payload[16:24])
+
+
+def fitted_extent(path: Path, max_cx: int, max_cy: int) -> tuple[str, str]:
+    width, height = png_dimensions(path)
+    scale = min(max_cx / width, max_cy / height)
+    return str(round(width * scale)), str(round(height * scale))
+
+
 def create_docx(template: Path, output: Path, data: dict, diagrams: Path) -> Path | None:
     package = data["package_name"]
+    framework_path = diagrams / f"{package}-framework.png"
+    flow_path = diagrams / f"{package}-flow.png"
+    framework_extent = fitted_extent(framework_path, 5_600_000, 3_600_000)
+    flow_extent = fitted_extent(flow_path, 4_800_000, 6_000_000)
     with zipfile.ZipFile(template) as source:
         members = {name: source.read(name) for name in source.namelist()}
-    members["word/document.xml"] = build_document(members["word/document.xml"], data)
+    members["word/document.xml"] = build_document(
+        members["word/document.xml"], data, framework_extent, flow_extent
+    )
     members["word/_rels/document.xml.rels"] = strip_relationships(members["word/_rels/document.xml.rels"])
     members["[Content_Types].xml"] = strip_content_types(members["[Content_Types].xml"])
-    members["word/media/image1.png"] = (diagrams / f"{package}-framework.png").read_bytes()
-    members["word/media/image2.png"] = (diagrams / f"{package}-flow.png").read_bytes()
-    members["word/media/image3.svg"] = (diagrams / f"{package}-flow.svg").read_bytes()
+    members["word/media/image1.png"] = framework_path.read_bytes()
+    members["word/media/image2.png"] = flow_path.read_bytes()
     for name in list(members):
         lowered = name.lower()
-        if "comments" in lowered or lowered.endswith("word/people.xml"):
+        if "comments" in lowered or lowered.endswith("word/people.xml") or lowered.endswith(".svg"):
             del members[name]
 
     output.parent.mkdir(parents=True, exist_ok=True)

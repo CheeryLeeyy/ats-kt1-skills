@@ -98,6 +98,21 @@ def main() -> int:
         for item in data["inputs"] + data["outputs"]:
             if item["name"] not in body_text:
                 errors.append(f"input/output missing: {item['name']}")
+            if not str(item.get("file_description", "")).strip():
+                errors.append(f"file-level Chinese description missing: {item['name']}")
+            elif item["file_description"] not in body_text:
+                errors.append(f"file-level description not written: {item['name']}")
+            fields = item.get("fields")
+            if not isinstance(fields, list) or not fields:
+                errors.append(f"field-level details missing: {item['name']}")
+                continue
+            for field in fields:
+                for key in ("name", "type", "description", "content"):
+                    value = str(field.get(key, "")).strip() if isinstance(field, dict) else ""
+                    if not value:
+                        errors.append(f"{item['name']} field {key} is empty")
+                    elif value not in body_text:
+                        errors.append(f"{item['name']} field {key} not written: {value}")
         start = paragraphs.index("2 算法模型简介") + 1 if "2 算法模型简介" in paragraphs else 0
         end = paragraphs.index("算法框架图") if "算法框架图" in paragraphs else len(paragraphs)
         intro_paragraphs = [value for value in paragraphs[start:end] if value.strip()]
@@ -145,6 +160,9 @@ def main() -> int:
             if label not in body_text:
                 errors.append(f"blank template field label missing: {label}")
         if tables:
+            table_text = element_text(tables[0])
+            if "params.json" in table_text:
+                errors.append("Docker runtime params.json must not appear in the model input/output table")
             values_by_label = {}
             rows = list(tables[0].iter(W + "tr"))
             for row in rows:
@@ -156,7 +174,11 @@ def main() -> int:
                     errors.append(f"template field must stay blank: {label}")
 
             row_labels = [element_text(list(row.findall(W + "tc"))[0]) for row in rows]
-            for label, next_label in (("输入数据要求", "输出数据要求"), ("输出数据要求", "模型服务场景")):
+            groups = (
+                ("输入数据要求", "输出数据要求", data["inputs"]),
+                ("输出数据要求", "模型服务场景", data["outputs"]),
+            )
+            for label, next_label, items in groups:
                 if label not in row_labels or next_label not in row_labels:
                     errors.append(f"cannot inspect vertically merged table group: {label}")
                     continue
@@ -171,6 +193,42 @@ def main() -> int:
                     errors.append(f"{label} label cell does not start a vertical merge")
                 if any(vertical_merge_value(cell) != "continue" for cell in first_cells[1:]):
                     errors.append(f"{label} label cell does not span all detailed file rows")
+                expected_rows = 1 + sum(len(item.get("fields", [])) for item in items)
+                if len(group) != expected_rows:
+                    errors.append(f"{label} row count mismatch: {len(group)} != {expected_rows}")
+                    continue
+                if len(list(group[0].findall(W + "tc"))) != 2:
+                    errors.append(f"{label} summary row must span the file and field columns")
+                cursor = 1
+                for item in items:
+                    fields = item.get("fields", [])
+                    file_rows = group[cursor : cursor + len(fields)]
+                    cursor += len(fields)
+                    if any(len(list(row.findall(W + "tc"))) != 3 for row in file_rows):
+                        errors.append(f"{label} {item['name']} requires three-column field rows")
+                        continue
+                    middle_cells = [list(row.findall(W + "tc"))[1] for row in file_rows]
+                    if len(fields) == 1:
+                        if vertical_merge_value(middle_cells[0]) is not None:
+                            errors.append(f"{item['name']} single field row must not merge into the next file")
+                    else:
+                        if vertical_merge_value(middle_cells[0]) != "restart":
+                            errors.append(f"{item['name']} file cell does not start a vertical merge")
+                        if any(vertical_merge_value(cell) != "continue" for cell in middle_cells[1:]):
+                            errors.append(f"{item['name']} file cell does not span all of its fields")
+                    expected_file_text = f"{item['file_description']}{item['name']}"
+                    if element_text(middle_cells[0]) != expected_file_text:
+                        errors.append(f"{item['name']} file cell must contain Chinese description and filename")
+                    for index, (row, field) in enumerate(zip(file_rows, fields)):
+                        cells = list(row.findall(W + "tc"))
+                        if index and element_text(cells[1]):
+                            errors.append(f"{item['name']} merged continuation cell must stay empty")
+                        if vertical_merge_value(cells[2]) is not None:
+                            errors.append(f"{item['name']} field cells must remain individually separated")
+                        field_text = element_text(cells[2])
+                        for key in ("description", "name", "type", "content"):
+                            if str(field[key]) not in field_text:
+                                errors.append(f"{item['name']} field row omits {key}: {field['name']}")
 
         nodes = [str(value).strip() for value in data.get("framework_nodes", [])]
         if len(nodes) != 6 or any(("：" not in value and ":" not in value) for value in nodes):

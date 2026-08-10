@@ -74,6 +74,9 @@ def main() -> int:
         "extract_existing_diagrams.py",
         "--missing-only",
         "--preserve-existing-png",
+        "中列只写文件级信息",
+        "`params.json`、GPU、共享内存、镜像入口",
+        "不罗列文件名、路径、变量名或文件数量",
     ):
         if required_text not in skill_text:
             errors.append(f"SKILL.md is missing required workflow text: {required_text}")
@@ -103,6 +106,9 @@ def main() -> int:
         "按顺序说明数据如何流经各模块",
         "旧图无条件迁移",
         "不得只是框架图的纵向版本",
+        "中文文件介绍＋真实文件名",
+        "中文介绍＋变量名＋类型＋具体内容",
+        "Docker 运行配置不属于算法输入输出数据",
     ):
         if required_text not in model_requirement_text:
             errors.append(f"model-principle comment rule is missing: {required_text}")

@@ -111,6 +111,22 @@ def set_vertical_merge(cell: ET.Element, *, restart: bool) -> None:
         marker.set(W + "val", "restart")
 
 
+def clear_vertical_merge(cell: ET.Element) -> None:
+    props = cell.find(W + "tcPr")
+    if props is None:
+        return
+    for marker in list(props.findall(W + "vMerge")):
+        props.remove(marker)
+
+
+def file_cell_text(item: dict) -> str:
+    return f"{item['file_description']}\n{item['name']}"
+
+
+def field_cell_text(field: dict) -> str:
+    return f"{field['description']}\n{field['name']} ({field['type']})\n内容：{field['content']}"
+
+
 def build_table(sample: ET.Element, data: dict) -> ET.Element:
     rows = sample.findall(W + "tr")
     metadata_sample = next(row for row in rows if len(row.findall(W + "tc")) == 2)
@@ -133,17 +149,39 @@ def build_table(sample: ET.Element, data: dict) -> ET.Element:
     set_vertical_merge(input_summary_row.findall(W + "tc")[0], restart=True)
     result.append(input_summary_row)
     for item in data["inputs"]:
-        detail_row = table_row(detail_sample, ["", item["name"], item["detail"]])
-        set_vertical_merge(detail_row.findall(W + "tc")[0], restart=False)
-        result.append(detail_row)
+        fields = item["fields"]
+        for index, field in enumerate(fields):
+            detail_row = table_row(
+                detail_sample,
+                ["", file_cell_text(item) if index == 0 else "", field_cell_text(field)],
+            )
+            cells = detail_row.findall(W + "tc")
+            set_vertical_merge(cells[0], restart=False)
+            clear_vertical_merge(cells[2])
+            if len(fields) > 1:
+                set_vertical_merge(cells[1], restart=index == 0)
+            else:
+                clear_vertical_merge(cells[1])
+            result.append(detail_row)
 
     output_summary_row = table_row(metadata_sample, ["输出数据要求", data["output_summary"]])
     set_vertical_merge(output_summary_row.findall(W + "tc")[0], restart=True)
     result.append(output_summary_row)
     for item in data["outputs"]:
-        detail_row = table_row(detail_sample, ["", item["name"], item["detail"]])
-        set_vertical_merge(detail_row.findall(W + "tc")[0], restart=False)
-        result.append(detail_row)
+        fields = item["fields"]
+        for index, field in enumerate(fields):
+            detail_row = table_row(
+                detail_sample,
+                ["", file_cell_text(item) if index == 0 else "", field_cell_text(field)],
+            )
+            cells = detail_row.findall(W + "tc")
+            set_vertical_merge(cells[0], restart=False)
+            clear_vertical_merge(cells[2])
+            if len(fields) > 1:
+                set_vertical_merge(cells[1], restart=index == 0)
+            else:
+                clear_vertical_merge(cells[1])
+            result.append(detail_row)
     for label, value in (
         ("模型服务场景", data["service_scene"]),
         ("上游接口模型编号", data["upstream_model_id"]),

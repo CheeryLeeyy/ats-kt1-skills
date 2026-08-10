@@ -475,6 +475,7 @@ def output_file_description(item: dict) -> str:
 
 def file_item(item: dict, fields: list[dict], *, output: bool = False) -> dict:
     description = output_file_description(item) if output else str(item.get("title") or item.get("description") or "输入数据文件").strip()
+    description = re.sub(r"[（(][^（）()]*[）)]", "", description).strip()
     return {
         "name": require_text(item, "name"),
         "file_description": description,

@@ -201,6 +201,8 @@ def main() -> int:
                     errors.append(f"{label} summary row must span the file and field columns")
                 cursor = 1
                 for item in items:
+                    if re.search(r"[（(][^（）()]*[）)]", str(item.get("file_description", ""))):
+                        errors.append(f"{item['name']} file description must use a direct Chinese name without parenthetical qualifiers")
                     fields = item.get("fields", [])
                     file_rows = group[cursor : cursor + len(fields)]
                     cursor += len(fields)

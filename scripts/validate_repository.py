@@ -77,6 +77,7 @@ def main() -> int:
         "中列只写文件级信息",
         "`params.json`、GPU、共享内存、镜像入口",
         "不罗列文件名、路径、变量名或文件数量",
+        "不添加“（节选）”“（结构节选）”等括号补充",
     ):
         if required_text not in skill_text:
             errors.append(f"SKILL.md is missing required workflow text: {required_text}")

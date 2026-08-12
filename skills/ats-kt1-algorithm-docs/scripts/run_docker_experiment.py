@@ -131,6 +131,13 @@ def main() -> int:
         metavar="NAME=VALUE",
         help="verified container environment override; may be repeated",
     )
+    parser.add_argument(
+        "--container-command-json",
+        help=(
+            "JSON array used to override the image CMD for a bounded validation run; "
+            "the complete override is retained in run.json"
+        ),
+    )
     parser.add_argument("--skip-load", action="store_true")
     args = parser.parse_args()
 
@@ -162,6 +169,14 @@ def main() -> int:
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
             raise ValueError(f"invalid environment variable name: {name!r}")
         runtime_env[name] = value
+    container_command: list[str] = []
+    if args.container_command_json:
+        parsed_command = json.loads(args.container_command_json)
+        if not isinstance(parsed_command, list) or not parsed_command:
+            raise ValueError("--container-command-json must be a non-empty JSON array")
+        if not all(isinstance(item, str) and item for item in parsed_command):
+            raise ValueError("every container command item must be a non-empty string")
+        container_command = parsed_command
     gpu_value = args.force_gpus if args.force_gpus is not None else params.get("gpus")
     shm_value = args.force_shm_size if args.force_shm_size is not None else params.get("shm-size")
     existed_before = image_exists(image)
@@ -176,6 +191,7 @@ def main() -> int:
         "params_json": params,
         "forced_runtime": {"gpus": args.force_gpus, "shm-size": args.force_shm_size},
         "runtime_env": runtime_env,
+        "container_command_override": container_command,
         "image_existed_before": existed_before,
         "started_at": utc_now(),
         "input_inventory": {key: value for key, value in input_inventory.items() if key != "files"},
@@ -225,6 +241,7 @@ def main() -> int:
             image,
         ]
     )
+    command.extend(container_command)
     record["docker_command"] = command
     record["docker_command_shell"] = shlex.join(command)
     record["container_name"] = container_name

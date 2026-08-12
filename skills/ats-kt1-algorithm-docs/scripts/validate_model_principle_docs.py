@@ -155,23 +155,29 @@ def main() -> int:
             errors.append(f"expected one basic-information table, found {len(tables)}")
         elif len(list(tables[0].iter(W + "tr"))) < 15:
             errors.append("basic-information table is missing detailed input/output rows")
-        blank_labels = ("上游接口模型编号", "下游接口模型编号", "交付时间")
-        for label in blank_labels:
-            if label not in body_text:
-                errors.append(f"blank template field label missing: {label}")
+        obsolete_labels = ("上游接口模型编号", "下游接口模型编号", "交付时间")
+        for label in obsolete_labels:
+            if label in body_text:
+                errors.append(f"obsolete template field remains: {label}")
         if tables:
             table_text = element_text(tables[0])
-            if "params.json" in table_text:
-                errors.append("Docker runtime params.json must not appear in the model input/output table")
+            runtime_items = [
+                item for item in data["inputs"] + data["outputs"]
+                if item.get("runtime_only") or str(item.get("role", "")).strip().lower() == "docker-runtime"
+            ]
+            if runtime_items:
+                errors.append("Docker runtime configuration items must not enter model input/output data")
             values_by_label = {}
             rows = list(tables[0].iter(W + "tr"))
             for row in rows:
                 cells = list(row.findall(W + "tc"))
                 if len(cells) == 2:
                     values_by_label[element_text(cells[0])] = element_text(cells[1])
-            for label in blank_labels:
-                if values_by_label.get(label, "").strip():
-                    errors.append(f"template field must stay blank: {label}")
+            expected_scenarios = "，".join(data.get("supported_scenarios", []))
+            if values_by_label.get("支持的协同场景", "").strip() != expected_scenarios:
+                errors.append("supported collaboration scenes do not match workbook columns C-F")
+            if body_text.count("支持的协同场景") != 1:
+                errors.append("supported collaboration scene row must appear exactly once")
 
             row_labels = [element_text(list(row.findall(W + "tc"))[0]) for row in rows]
             groups = (

@@ -16,6 +16,8 @@ NS = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 PACKAGE_PATTERN = re.compile(r"algo1-4-j-(\d+)", re.IGNORECASE)
 DOCUMENT_SUFFIXES = {".docx", ".doc", ".pdf", ".md", ".txt"}
+SCENE_COLUMNS = ("C", "D", "E", "F")
+CHECK_MARKS = {"✓", "✔", "√", "☑", "是", "1", "true", "yes"}
 MODEL_NAME_PATTERN = re.compile(
     r"^\s*模型名称(?:（现）)?(?:\d+)?\s*(?:[:：]\s*)?(.*?)\s*$"
 )
@@ -168,7 +170,7 @@ def name_from_existing_documents(package_dir: Path) -> tuple[str, Path]:
     )
 
 
-def load_workbook_names(path: Path) -> tuple[dict[str, dict[str, str]], str, str]:
+def load_workbook_names(path: Path) -> tuple[dict[str, dict[str, str]], str, str, dict[str, str]]:
     rows = load_rows(path)
     header_index = next(
         index
@@ -193,6 +195,10 @@ def load_workbook_names(path: Path) -> tuple[dict[str, dict[str, str]], str, str
         raise ValueError("could not identify the algorithm-id column")
 
     original_name_column = columns.get("模型名称（原）")
+    function_column = columns.get("模型功能描述")
+    scene_headers = {column: header.get(column, "").strip() for column in SCENE_COLUMNS}
+    if any(not value for value in scene_headers.values()):
+        raise ValueError("collaboration-scene headers are missing from workbook columns C-F")
     result: dict[str, dict[str, str]] = {}
     for row in rows[header_index + 1 :]:
         algorithm_id = row.get(id_column, "").strip()
@@ -203,14 +209,29 @@ def load_workbook_names(path: Path) -> tuple[dict[str, dict[str, str]], str, str
         current_name = row.get(name_column, "").strip()
         if not current_name:
             continue
+        supported_scenarios = []
+        for column in SCENE_COLUMNS:
+            marker = row.get(column, "").strip()
+            if not marker:
+                continue
+            if marker.casefold() not in CHECK_MARKS:
+                raise ValueError(
+                    f"unexpected collaboration-scene marker {marker!r} in {algorithm_id} column {column}"
+                )
+            supported_scenarios.append(scene_headers[column])
+        if not supported_scenarios:
+            raise ValueError(f"{algorithm_id} has no checked collaboration scene in columns C-F")
         result[f"1-4-J-{number}"] = {
             "number": number,
             "package": f"algo1-4-j-{number}",
             "original_name": row.get(original_name_column, "").strip() if original_name_column else "",
             "current_name": current_name,
+            "function_description": row.get(function_column, "").strip() if function_column else "",
+            "supported_scenarios": supported_scenarios,
+            "supported_scenarios_text": "，".join(supported_scenarios),
             "name_source": str(path),
         }
-    return result, id_column, name_column
+    return result, id_column, name_column, scene_headers
 
 
 def main() -> int:
@@ -237,7 +258,7 @@ def main() -> int:
 
     if workbook_available:
         try:
-            workbook_names, id_column, name_column = load_workbook_names(args.xlsx)
+            workbook_names, id_column, name_column, scene_headers = load_workbook_names(args.xlsx)
         except (KeyError, StopIteration, ValueError, zipfile.BadZipFile) as exc:
             parser.error(f"cannot read naming workbook {args.xlsx}: {exc}")
         result: dict[str, dict[str, str]] = {}
@@ -276,6 +297,7 @@ def main() -> int:
     else:
         id_column = None
         name_column = None
+        scene_headers = None
         result = {}
         for number, package in packages:
             package_dir = args.algorithms_root / package
@@ -299,6 +321,7 @@ def main() -> int:
         "sheet": "工作表1" if workbook_available else None,
         "id_column": id_column,
         "current_name_column": name_column,
+        "collaboration_scene_columns": scene_headers,
         "algorithms": result,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

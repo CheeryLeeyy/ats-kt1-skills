@@ -485,8 +485,7 @@ def file_item(item: dict, fields: list[dict], *, output: bool = False) -> dict:
 
 
 def is_docker_runtime_file(item: dict) -> bool:
-    name = str(item.get("name", "")).replace("\\", "/").rsplit("/", 1)[-1].lower()
-    return name == "params.json"
+    return bool(item.get("runtime_only")) or str(item.get("role", "")).strip().lower() == "docker-runtime"
 
 
 def require_text(data: dict, key: str) -> str:
@@ -571,9 +570,12 @@ def main() -> int:
             raise ValueError(f"{package} first flow step must start from input data")
         if not any(token in normalized_flow[-1] for token in ("输出", "写入", "保存", "生成")):
             raise ValueError(f"{package} last flow step must produce the output data")
-        for key in ("upstream_model_id", "downstream_model_id", "delivery_time"):
-            if str(spec.get(key, "")).strip():
-                raise ValueError(f"{package} {key} must stay blank per template comments")
+        supported_scenarios = names[algorithm_id].get("supported_scenarios")
+        if not isinstance(supported_scenarios, list) or not supported_scenarios:
+            raise ValueError(f"{package} requires checked collaboration scenes from workbook columns C-F")
+        supported_scenarios = [str(value).strip() for value in supported_scenarios if str(value).strip()]
+        if not supported_scenarios:
+            raise ValueError(f"{package} collaboration-scene list is empty")
 
         inputs = [
             file_item(item, input_fields(item))
@@ -599,9 +601,8 @@ def main() -> int:
             "output_summary": require_semantic_summary(spec, "output_summary", package),
             "outputs": outputs,
             "service_scene": require_text(spec, "service_scene"),
-            "upstream_model_id": "",
-            "downstream_model_id": "",
-            "delivery_time": "",
+            "supported_scenarios": supported_scenarios,
+            "supported_scenarios_text": "，".join(supported_scenarios),
             "responsible_unit": str(spec.get("responsible_unit", "北京邮电大学")),
             "intro_paragraphs": intro,
             "framework_nodes": nodes,

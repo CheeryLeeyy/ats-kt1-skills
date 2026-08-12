@@ -184,9 +184,7 @@ def build_table(sample: ET.Element, data: dict) -> ET.Element:
             result.append(detail_row)
     for label, value in (
         ("模型服务场景", data["service_scene"]),
-        ("上游接口模型编号", data["upstream_model_id"]),
-        ("下游接口模型编号", data["downstream_model_id"]),
-        ("交付时间", data["delivery_time"]),
+        ("支持的协同场景", data["supported_scenarios_text"]),
         ("责任单位", data["responsible_unit"]),
     ):
         result.append(table_row(metadata_sample, [label, value]))

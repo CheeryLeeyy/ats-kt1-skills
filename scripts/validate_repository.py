@@ -75,9 +75,11 @@ def main() -> int:
         "--missing-only",
         "--preserve-existing-png",
         "中列只写文件级信息",
-        "`params.json`、GPU、共享内存、镜像入口",
+        "算法根目录中仅用于启动 Docker 的 `params.json`",
         "不罗列文件名、路径、变量名或文件数量",
         "不添加“（节选）”“（结构节选）”等括号补充",
+        "支持的协同场景",
+        "C、D、E、F 四列",
     ):
         if required_text not in skill_text:
             errors.append(f"SKILL.md is missing required workflow text: {required_text}")
@@ -100,7 +102,8 @@ def main() -> int:
         encoding="utf-8"
     )
     for required_text in (
-        "上游接口模型编号",
+        "删除“上游接口模型编号”“下游接口模型编号”“交付时间”三行",
+        "支持的协同场景",
         "至少写 4 个实质段落",
         "不出现原始论文的英文算法名",
         "每个模块同时给出中文模块名和简短作用说明",
@@ -109,7 +112,7 @@ def main() -> int:
         "不得只是框架图的纵向版本",
         "中文文件介绍＋真实文件名",
         "中文介绍＋变量名＋类型＋具体内容",
-        "Docker 运行配置不属于算法输入输出数据",
+        "算法根目录中仅用于启动 Docker 的 `params.json`",
     ):
         if required_text not in model_requirement_text:
             errors.append(f"model-principle comment rule is missing: {required_text}")
@@ -162,11 +165,11 @@ def main() -> int:
                         comment_text = "".join(
                             node.text or "" for comment in comment_nodes for node in comment.iter(W + "t")
                         )
-                        if len(comment_nodes) != 4:
+                        if len(comment_nodes) != 3:
                             errors.append(
-                                f"model-principle template must retain four comment groups, found {len(comment_nodes)}"
+                                f"model-principle template must retain three comment groups, found {len(comment_nodes)}"
                             )
-                        for marker in ("空着不用填", "公式和符号", "自己画", "数据流程"):
+                        for marker in ("公式和符号", "自己画", "数据流程"):
                             if marker not in comment_text:
                                 errors.append(f"model-principle template comment marker missing: {marker}")
         except zipfile.BadZipFile:

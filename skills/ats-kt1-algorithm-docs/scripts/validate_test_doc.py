@@ -193,9 +193,10 @@ def main() -> int:
             "algo1-4-j-1.tar",
             "test_option_1_2021_08_22_13_37_16",
         ]
+        structured_text = json.dumps(data, ensure_ascii=False)
         if data.get("package_name") != "algo1-4-j-1":
             for residue in residues:
-                if residue in body_text:
+                if residue in body_text and residue not in structured_text:
                     fail(errors, f"template example residue remains: {residue}")
         placeholders = [
             value

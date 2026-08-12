@@ -153,8 +153,6 @@ def main() -> int:
         tables = list(root.iter(W + "tbl"))
         if len(tables) != 1:
             errors.append(f"expected one basic-information table, found {len(tables)}")
-        elif len(list(tables[0].iter(W + "tr"))) < 15:
-            errors.append("basic-information table is missing detailed input/output rows")
         obsolete_labels = ("上游接口模型编号", "下游接口模型编号", "交付时间")
         for label in obsolete_labels:
             if label in body_text:

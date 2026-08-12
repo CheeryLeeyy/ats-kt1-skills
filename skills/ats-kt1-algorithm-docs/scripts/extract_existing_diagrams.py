@@ -143,13 +143,17 @@ def main() -> int:
                     }
                 )
 
-        classified = [item for item in candidates if item["kind"]]
-        if len(candidates) == 2 and len(classified) < 2:
+        # The model-principle template has two diagram slots in document order:
+        # framework first, flow second. Some legacy files place both images near
+        # the flow heading, causing proximity scoring to label both as flow.
+        # Preserve both old images unconditionally and use template order when
+        # exactly two candidates are present but the two kinds are not distinct.
+        classified_kinds = {item["kind"] for item in candidates if item["kind"]}
+        if len(candidates) == 2 and classified_kinds != {"framework", "flow"}:
             for kind, item in zip(("framework", "flow"), candidates):
-                if not item["kind"]:
-                    item["kind"] = kind
-                    item["score"] = 1
-                    item["context"] = "inferred from two-image document order"
+                item["kind"] = kind
+                item["score"] = max(int(item.get("score", 0)), 1)
+                item["context"] = "inferred from two-image model-template order"
 
         selected = {}
         for item in candidates:

@@ -152,6 +152,18 @@ FIELD_LABELS = {
     "pclients": "每轮参与客户端数",
     "iters": "联邦迭代轮数",
     "use_taylor": "泰勒扩展开关",
+    "_name_or_path": "预训练模型名称或路径",
+    "architectures": "模型架构列表",
+    "attention_probs_dropout_prob": "注意力权重丢弃概率",
+    "hidden_act": "隐藏层激活函数",
+    "hidden_dropout_prob": "隐藏层丢弃概率",
+    "hidden_size": "隐藏层维度",
+    "encoder_stride": "编码器步长",
+    "auto_mapping": "基础模型映射关系",
+    "base_model_name_or_path": "基础模型名称或路径",
+    "fan_in_fan_out": "权重矩阵转置开关",
+    "inference_mode": "推理模式开关",
+    "init_lora_weights": "低秩适配权重初始化方式",
     "VERSION": "点云格式版本",
     "WIDTH": "点云宽度",
     "HEIGHT": "点云高度",
@@ -175,6 +187,28 @@ FIELD_LABELS = {
 }
 
 
+def semantic_description(name: str, description: str) -> str:
+    """Return a verified semantic label; omit mechanical or unknown labels."""
+    description = str(description).strip()
+    compact_name = str(name).strip()
+    display_name = compact_name.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    mechanical = {
+        f"{compact_name}字段",
+        f"{compact_name} 字段",
+        f"{compact_name}变量",
+        f"{compact_name} 变量",
+        "表格字段",
+    }
+    if description and description not in mechanical:
+        return description
+    if re.fullmatch(r"\d{6}\.png", display_name, re.I):
+        return "输入图像"
+    meta = FIELD_META.get(compact_name)
+    if meta:
+        return meta[0]
+    return FIELD_LABELS.get(compact_name, "")
+
+
 def inferred_type(value: str) -> str:
     lowered = value.strip().lower()
     if lowered in {"true", "false"}:
@@ -193,13 +227,13 @@ def field_record(name: str, value: str, description: str = "", type_name: str = 
     if meta:
         default_description, default_type, default_content = meta
     else:
-        default_description = FIELD_LABELS.get(name, f"{name} 字段")
+        default_description = FIELD_LABELS.get(name, "")
         default_type = inferred_type(value)
         default_content = "文件中记录的对应变量内容"
     return {
         "name": name,
         "type": type_name or default_type,
-        "description": str(description).strip() or default_description,
+        "description": semantic_description(name, str(description).strip() or default_description),
         "content": value or default_content,
     }
 
@@ -270,7 +304,7 @@ def code_fields(content: dict) -> list[dict]:
     major = re.search(r"主要字段[：:]\s*([^\n]+)", source)
     if major:
         for name in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", major.group(1)):
-            fields.append(field_record(name, "类别名称字符串数组", FIELD_LABELS.get(name, f"{name} 字段"), "list[str]"))
+            fields.append(field_record(name, "类别名称字符串数组", FIELD_LABELS.get(name, ""), "list[str]"))
     for line in lines:
         stripped = line.strip()
         match = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)", stripped)
@@ -279,7 +313,7 @@ def code_fields(content: dict) -> list[dict]:
         name, value = match.groups()
         if any(field["name"] == name for field in fields):
             continue
-        fields.append(field_record(name, value, FIELD_LABELS.get(name, f"{name} 字段")))
+        fields.append(field_record(name, value, FIELD_LABELS.get(name, "")))
     json_keys = re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)"\s*:', source)
     for name in json_keys:
         if not any(field["name"] == name for field in fields):

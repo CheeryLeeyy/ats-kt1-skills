@@ -132,7 +132,12 @@ def file_cell_text(item: dict) -> str:
 
 
 def field_cell_text(field: dict) -> str:
-    return f"{field['description']}\n{short_name(field['name'])} ({field['type']})"
+    values = []
+    description = str(field.get("description", "")).strip()
+    if description:
+        values.append(description)
+    values.append(f"{short_name(field['name'])} ({field['type']})")
+    return "\n".join(values)
 
 
 def build_table(sample: ET.Element, data: dict) -> ET.Element:

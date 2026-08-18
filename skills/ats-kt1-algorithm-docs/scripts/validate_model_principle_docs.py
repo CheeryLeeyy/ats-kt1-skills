@@ -115,12 +115,17 @@ def main() -> int:
                 errors.append(f"field-level details missing: {item['name']}")
                 continue
             for field in fields:
-                for key in ("name", "type", "description"):
+                for key in ("name", "type"):
                     value = str(field.get(key, "")).strip() if isinstance(field, dict) else ""
                     if not value:
                         errors.append(f"{item['name']} field {key} is empty")
                     elif (short_name(value) if key == "name" else value) not in body_text:
                         errors.append(f"{item['name']} field {key} not written: {value}")
+                description = str(field.get("description", "")).strip() if isinstance(field, dict) else ""
+                if description and description not in body_text:
+                    errors.append(f"{item['name']} field description not written: {description}")
+                if description == "表格字段" or re.search(r"(?:字段|变量)$", description):
+                    errors.append(f"{item['name']} field description is mechanical: {description}")
         start = paragraphs.index("2 算法模型简介") + 1 if "2 算法模型简介" in paragraphs else 0
         end = paragraphs.index("算法框架图") if "算法框架图" in paragraphs else len(paragraphs)
         intro_paragraphs = [value for value in paragraphs[start:end] if value.strip()]
@@ -246,10 +251,13 @@ def main() -> int:
                         if vertical_merge_value(cells[2]) is not None:
                             errors.append(f"{item['name']} field cells must remain individually separated")
                         field_text = element_text(cells[2])
-                        for key in ("description", "name", "type"):
+                        for key in ("name", "type"):
                             expected_value = short_name(field[key]) if key == "name" else str(field[key])
                             if expected_value not in field_text:
                                 errors.append(f"{item['name']} field row omits {key}: {field['name']}")
+                        description = str(field.get("description", "")).strip()
+                        if description and description not in field_text:
+                            errors.append(f"{item['name']} field row omits description: {field['name']}")
                         if re.search(r"内容\s*[：:]", field_text):
                             errors.append(f"{item['name']} field row must not include concrete content")
                         if re.search(r"(?:^|[\\/])(?:input|output|app|home|mnt)[\\/]", field_text, re.I):

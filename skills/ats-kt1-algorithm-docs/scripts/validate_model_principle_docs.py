@@ -13,6 +13,7 @@ from xml.etree import ElementTree as ET
 
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+M = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 ASVG = "{http://schemas.microsoft.com/office/drawing/2016/SVG/main}"
 WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
@@ -25,6 +26,39 @@ TOPIC_NAME = "协同计算性能增强导向的传算融合基础算法"
 
 def element_text(element: ET.Element) -> str:
     return "".join(node.text or "" for node in element.iter(W + "t")).strip()
+
+
+def intro_elements(root: ET.Element) -> list[ET.Element]:
+    body = root.find(W + "body")
+    if body is None:
+        return []
+    children = list(body)
+    start = None
+    for index, child in enumerate(children):
+        if element_text(child).replace(" ", "").startswith("2算法模型简介"):
+            start = index
+            break
+    if start is None:
+        return []
+    for index in range(start + 1, len(children)):
+        value = element_text(children[index]).replace(" ", "")
+        if value.startswith("算法框架图") or re.match(r"^3(?:算法设计|算法模型)", value):
+            return children[start + 1 : index]
+    return []
+
+
+def intro_facts(root: ET.Element) -> dict[str, object]:
+    elements = intro_elements(root)
+    return {
+        "elements": elements,
+        "paragraphs": [value for value in (element_text(item) for item in elements) if value],
+        "formula_nodes": sum(
+            1 for item in elements for node in item.iter() if node.tag == M + "oMath"
+        ),
+        "drawings": sum(
+            1 for item in elements for node in item.iter() if node.tag == W + "drawing"
+        ),
+    }
 
 
 def short_name(value: object) -> str:
@@ -50,9 +84,20 @@ def main() -> int:
     parser.add_argument("--docx", required=True, type=Path)
     parser.add_argument("--data", required=True, type=Path)
     parser.add_argument("--old-name", default="")
+    parser.add_argument("--legacy-intro-source", type=Path)
     args = parser.parse_args()
     data = json.loads(args.data.read_text(encoding="utf-8"))
     errors: list[str] = []
+    legacy_intro = None
+    if args.legacy_intro_source:
+        try:
+            with zipfile.ZipFile(args.legacy_intro_source) as legacy_archive:
+                legacy_root = ET.fromstring(legacy_archive.read("word/document.xml"))
+            legacy_intro = intro_facts(legacy_root)
+            if not legacy_intro["paragraphs"]:
+                errors.append("legacy introduction source has no restorable section content")
+        except Exception as exc:
+            errors.append(f"cannot inspect legacy introduction source: {exc}")
     expected = f"{data['package_name']}模型原理说明.docx"
     if args.docx.name != expected:
         errors.append(f"filename mismatch: {args.docx.name} != {expected}")
@@ -129,30 +174,60 @@ def main() -> int:
         start = paragraphs.index("2 算法模型简介") + 1 if "2 算法模型简介" in paragraphs else 0
         end = paragraphs.index("算法框架图") if "算法框架图" in paragraphs else len(paragraphs)
         intro_paragraphs = [value for value in paragraphs[start:end] if value.strip()]
-        if len(intro_paragraphs) < 4:
-            errors.append(f"model introduction too short: {len(intro_paragraphs)} paragraphs")
         intro_text = "".join(intro_paragraphs)
-        if len(intro_text) < 350:
-            errors.append(f"model introduction too brief: {len(intro_text)} characters")
+        current_intro = intro_facts(root)
+        if legacy_intro and (legacy_intro["formula_nodes"] or legacy_intro["drawings"]):
+            if current_intro["formula_nodes"] < legacy_intro["formula_nodes"]:
+                errors.append(
+                    "legacy formulas missing: "
+                    f"{current_intro['formula_nodes']} < {legacy_intro['formula_nodes']}"
+                )
+            if current_intro["drawings"] < legacy_intro["drawings"]:
+                errors.append(
+                    "legacy formula images missing: "
+                    f"{current_intro['drawings']} < {legacy_intro['drawings']}"
+                )
+            for value in legacy_intro["paragraphs"]:
+                if value not in intro_text:
+                    errors.append(f"legacy explanation paragraph missing: {value[:80]}")
+        else:
+            if len(intro_paragraphs) < 4:
+                errors.append(f"model introduction too short: {len(intro_paragraphs)} paragraphs")
+            if len(intro_text) < 350:
+                errors.append(f"model introduction too brief: {len(intro_text)} characters")
         diagram_text = "".join(str(value) for value in data.get("framework_nodes", [])) + "".join(
             str(value) for value in data.get("flow_steps", [])
         )
         reviewed_text = intro_text
+        legacy_intro_text = "".join(legacy_intro["paragraphs"]) if legacy_intro else ""
         for forbidden in FORBIDDEN_ENGLISH_NAMES:
-            if forbidden.casefold() in reviewed_text.casefold():
+            if (
+                forbidden.casefold() in reviewed_text.casefold()
+                and forbidden.casefold() not in legacy_intro_text.casefold()
+            ):
                 errors.append(f"forbidden original English method/module name in body text: {forbidden}")
         english_terms = {
             value
             for value in re.findall(r"\b[A-Za-z][A-Za-z0-9-]{2,}\b", reviewed_text)
             if value not in ALLOWED_ENGLISH_TERMS
         }
+        if legacy_intro:
+            legacy_terms = {
+                value
+                for value in re.findall(
+                    r"\b[A-Za-z][A-Za-z0-9-]{2,}\b",
+                    legacy_intro_text,
+                )
+            }
+            english_terms -= legacy_terms
         if english_terms:
             errors.append(f"possible English method/module names remain: {sorted(english_terms)}")
         for term in UNRELATED_TERMS:
             if term in body_text or term in diagram_text:
                 errors.append(f"traffic-unrelated example remains: {term}")
-        if sum(1 for _ in root.iter(W + "drawing")) != 2:
-            errors.append("expected exactly two embedded diagrams")
+        expected_drawings = 2 + (int(legacy_intro["drawings"]) if legacy_intro else 0)
+        if sum(1 for _ in root.iter(W + "drawing")) != expected_drawings:
+            errors.append(f"expected exactly {expected_drawings} embedded diagrams")
         drawing_extents = []
         for drawing in root.iter(W + "drawing"):
             extent = drawing.find(f".//{WP}extent")

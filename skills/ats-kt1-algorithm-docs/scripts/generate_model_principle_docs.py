@@ -25,6 +25,8 @@ W = f"{{{W_NS}}}"
 WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 ASVG = "{http://schemas.microsoft.com/office/drawing/2016/SVG/main}"
+PROJECT_NAME = "自主式交通系统端-边-云协同计算架构与基础算法模型"
+TOPIC_NAME = "协同计算性能增强导向的传算融合基础算法"
 
 
 def register_namespaces(xml_bytes: bytes) -> None:
@@ -119,12 +121,18 @@ def clear_vertical_merge(cell: ET.Element) -> None:
         props.remove(marker)
 
 
+def short_name(value: object) -> str:
+    """Return a display name without Docker or host directory components."""
+    normalized = str(value).strip().replace("\\", "/").rstrip("/")
+    return normalized.rsplit("/", 1)[-1]
+
+
 def file_cell_text(item: dict) -> str:
-    return f"{item['file_description']}\n{item['name']}"
+    return f"{item['file_description']}\n{short_name(item['name'])}"
 
 
 def field_cell_text(field: dict) -> str:
-    return f"{field['description']}\n{field['name']} ({field['type']})\n内容：{field['content']}"
+    return f"{field['description']}\n{short_name(field['name'])} ({field['type']})"
 
 
 def build_table(sample: ET.Element, data: dict) -> ET.Element:
@@ -136,8 +144,8 @@ def build_table(sample: ET.Element, data: dict) -> ET.Element:
         result.remove(row)
 
     metadata = [
-        ("课题名称", data.get("project_name", "自主式交通系统跨域计算与决策优化")),
-        ("专题名称", data.get("topic_name", "端边云协同的多方式自主交通系统全域认知计算")),
+        ("课题名称", PROJECT_NAME),
+        ("专题名称", TOPIC_NAME),
         ("模型编号", data["algorithm_id"]),
         ("模型名称", data["algorithm_name"]),
         ("模型功能描述", data["function_description"]),

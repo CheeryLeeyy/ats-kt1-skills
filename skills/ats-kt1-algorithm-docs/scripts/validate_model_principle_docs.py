@@ -19,10 +19,17 @@ WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
 FORBIDDEN_ENGLISH_NAMES = ("HierFL", "PointPillar", "DJSCC", "PILoRA", "VAE", "MFE", "SRE", "AQC", "Enhancing Communication", "ASC-CP", "DEVA")
 ALLOWED_ENGLISH_TERMS = {"CPU", "GPU", "JSON", "CSV", "NPY", "NPZ", "V2V", "V2X", "Docker"}
 UNRELATED_TERMS = ("小猫", "小狗", "猫咪", "宠物")
+PROJECT_NAME = "自主式交通系统端-边-云协同计算架构与基础算法模型"
+TOPIC_NAME = "协同计算性能增强导向的传算融合基础算法"
 
 
 def element_text(element: ET.Element) -> str:
     return "".join(node.text or "" for node in element.iter(W + "t")).strip()
+
+
+def short_name(value: object) -> str:
+    normalized = str(value).strip().replace("\\", "/").rstrip("/")
+    return normalized.rsplit("/", 1)[-1]
 
 
 def vertical_merge_value(cell: ET.Element) -> str | None:
@@ -96,8 +103,9 @@ def main() -> int:
         if other_ids:
             errors.append(f"other algorithm identifiers remain: {sorted(other_ids)}")
         for item in data["inputs"] + data["outputs"]:
-            if item["name"] not in body_text:
-                errors.append(f"input/output missing: {item['name']}")
+            display_name = short_name(item["name"])
+            if display_name not in body_text:
+                errors.append(f"input/output missing: {display_name}")
             if not str(item.get("file_description", "")).strip():
                 errors.append(f"file-level Chinese description missing: {item['name']}")
             elif item["file_description"] not in body_text:
@@ -107,11 +115,11 @@ def main() -> int:
                 errors.append(f"field-level details missing: {item['name']}")
                 continue
             for field in fields:
-                for key in ("name", "type", "description", "content"):
+                for key in ("name", "type", "description"):
                     value = str(field.get(key, "")).strip() if isinstance(field, dict) else ""
                     if not value:
                         errors.append(f"{item['name']} field {key} is empty")
-                    elif value not in body_text:
+                    elif (short_name(value) if key == "name" else value) not in body_text:
                         errors.append(f"{item['name']} field {key} not written: {value}")
         start = paragraphs.index("2 算法模型简介") + 1 if "2 算法模型简介" in paragraphs else 0
         end = paragraphs.index("算法框架图") if "算法框架图" in paragraphs else len(paragraphs)
@@ -172,6 +180,10 @@ def main() -> int:
                 if len(cells) == 2:
                     values_by_label[element_text(cells[0])] = element_text(cells[1])
             expected_scenarios = "，".join(data.get("supported_scenarios", []))
+            if values_by_label.get("课题名称", "").strip() != PROJECT_NAME:
+                errors.append("project name must use the fixed ATS topic-one value")
+            if values_by_label.get("专题名称", "").strip() != TOPIC_NAME:
+                errors.append("topic name must use the fixed ATS topic-one value")
             if values_by_label.get("支持的协同场景", "").strip() != expected_scenarios:
                 errors.append("supported collaboration scenes do not match workbook columns C-F")
             if body_text.count("支持的协同场景") != 1:
@@ -222,9 +234,11 @@ def main() -> int:
                             errors.append(f"{item['name']} file cell does not start a vertical merge")
                         if any(vertical_merge_value(cell) != "continue" for cell in middle_cells[1:]):
                             errors.append(f"{item['name']} file cell does not span all of its fields")
-                    expected_file_text = f"{item['file_description']}{item['name']}"
+                    expected_file_text = f"{item['file_description']}{short_name(item['name'])}"
                     if element_text(middle_cells[0]) != expected_file_text:
                         errors.append(f"{item['name']} file cell must contain Chinese description and filename")
+                    if re.search(r"(?:^|[\\/])(?:input|output|app|home|mnt)[\\/]", element_text(middle_cells[0]), re.I):
+                        errors.append(f"{item['name']} file cell contains a directory path")
                     for index, (row, field) in enumerate(zip(file_rows, fields)):
                         cells = list(row.findall(W + "tc"))
                         if index and element_text(cells[1]):
@@ -232,9 +246,14 @@ def main() -> int:
                         if vertical_merge_value(cells[2]) is not None:
                             errors.append(f"{item['name']} field cells must remain individually separated")
                         field_text = element_text(cells[2])
-                        for key in ("description", "name", "type", "content"):
-                            if str(field[key]) not in field_text:
+                        for key in ("description", "name", "type"):
+                            expected_value = short_name(field[key]) if key == "name" else str(field[key])
+                            if expected_value not in field_text:
                                 errors.append(f"{item['name']} field row omits {key}: {field['name']}")
+                        if re.search(r"内容\s*[：:]", field_text):
+                            errors.append(f"{item['name']} field row must not include concrete content")
+                        if re.search(r"(?:^|[\\/])(?:input|output|app|home|mnt)[\\/]", field_text, re.I):
+                            errors.append(f"{item['name']} field row contains a directory path")
 
         nodes = [str(value).strip() for value in data.get("framework_nodes", [])]
         if len(nodes) != 6 or any(("：" not in value and ":" not in value) for value in nodes):

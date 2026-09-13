@@ -382,7 +382,8 @@ def input_fields(item: dict) -> list[dict]:
     elif isinstance(content, dict) and content.get("type") == "code":
         fields = code_fields(content)
     if not fields:
-        fields = [field_record("file_content", item.get("detail", ""), "文件主体内容", str(item.get("format", "data")))]
+        fallback_name = Path(str(item.get("name", "")).replace("\\", "/")).name or "data"
+        fields = [field_record(fallback_name, item.get("detail", ""), "", str(item.get("format", "data")))]
     return fields
 
 
@@ -471,7 +472,8 @@ def output_fields(item: dict, test_data: dict) -> list[dict]:
         if "版本" in description and not any(field["name"] == "version" for field in fields):
             fields.append(field_record("version", "结果文件中记录的版本标识"))
     if not fields:
-        fields = [field_record("file_content", description, "文件主体内容", str(item.get("format", "data")))]
+        fallback_name = Path(str(item.get("name", "")).replace("\\", "/")).name or "data"
+        fields = [field_record(fallback_name, description, "", str(item.get("format", "data")))]
     return fields
 
 
@@ -576,10 +578,8 @@ def main() -> int:
         if not isinstance(intro, list):
             raise ValueError(f"{package} requires a list of introduction paragraphs")
         intro = [str(value).strip() for value in intro if str(value).strip()]
-        if len(intro) < 4:
-            raise ValueError(f"{package} requires at least four introduction paragraphs")
-        if len("".join(intro)) < 350:
-            raise ValueError(f"{package} introduction must contain at least 350 characters")
+        if len("".join(intro)) < 300:
+            raise ValueError(f"{package} introduction must contain at least 300 characters")
         if not isinstance(nodes, list) or len(nodes) != 6:
             raise ValueError(f"{package} requires exactly six framework nodes")
         nodes = [str(value).strip() for value in nodes]
@@ -627,17 +627,16 @@ def main() -> int:
             "algorithm_id": algorithm_id,
             "package_name": package,
             "algorithm_name": current_name,
-            "project_name": spec.get("project_name", "自主式交通系统跨域计算与决策优化"),
-            "topic_name": spec.get("topic_name", "端边云协同的多方式自主交通系统全域认知计算"),
+            "project_name": "自主式交通系统端-边-云协同计算架构与基础算法模型",
+            "topic_name": "协同计算性能增强导向的传算融合基础算法",
             "function_description": require_text(spec, "function_description"),
             "input_summary": require_semantic_summary(spec, "input_summary", package),
             "inputs": inputs,
             "output_summary": require_semantic_summary(spec, "output_summary", package),
             "outputs": outputs,
-            "service_scene": require_text(spec, "service_scene"),
             "supported_scenarios": supported_scenarios,
             "supported_scenarios_text": "，".join(supported_scenarios),
-            "responsible_unit": str(spec.get("responsible_unit", "北京邮电大学")),
+            "responsible_unit": "北京邮电大学",
             "intro_paragraphs": intro,
             "framework_nodes": nodes,
             "flow_steps": flow_steps,

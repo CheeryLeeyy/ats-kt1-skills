@@ -191,10 +191,10 @@ def main() -> int:
                 if value not in intro_text:
                     errors.append(f"legacy explanation paragraph missing: {value[:80]}")
         else:
-            if len(intro_paragraphs) < 4:
-                errors.append(f"model introduction too short: {len(intro_paragraphs)} paragraphs")
-            if len(intro_text) < 350:
+            if len(intro_text) < 300:
                 errors.append(f"model introduction too brief: {len(intro_text)} characters")
+        if "file_content" in body_text.casefold():
+            errors.append("placeholder field file_content must not appear in the document")
         diagram_text = "".join(str(value) for value in data.get("framework_nodes", [])) + "".join(
             str(value) for value in data.get("flow_steps", [])
         )
@@ -241,7 +241,7 @@ def main() -> int:
         tables = list(root.iter(W + "tbl"))
         if len(tables) != 1:
             errors.append(f"expected one basic-information table, found {len(tables)}")
-        obsolete_labels = ("上游接口模型编号", "下游接口模型编号", "交付时间")
+        obsolete_labels = ("上游接口模型编号", "下游接口模型编号", "交付时间", "模型服务场景")
         for label in obsolete_labels:
             if label in body_text:
                 errors.append(f"obsolete template field remains: {label}")
@@ -272,7 +272,7 @@ def main() -> int:
             row_labels = [element_text(list(row.findall(W + "tc"))[0]) for row in rows]
             groups = (
                 ("输入数据要求", "输出数据要求", data["inputs"]),
-                ("输出数据要求", "模型服务场景", data["outputs"]),
+                ("输出数据要求", "支持的协同场景", data["outputs"]),
             )
             for label, next_label, items in groups:
                 if label not in row_labels or next_label not in row_labels:

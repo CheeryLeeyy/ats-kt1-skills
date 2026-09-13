@@ -196,7 +196,6 @@ def build_table(sample: ET.Element, data: dict) -> ET.Element:
                 clear_vertical_merge(cells[1])
             result.append(detail_row)
     for label, value in (
-        ("模型服务场景", data["service_scene"]),
         ("支持的协同场景", data["supported_scenarios_text"]),
         ("责任单位", data["responsible_unit"]),
     ):
